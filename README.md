@@ -89,6 +89,48 @@ Review the inferred contract, especially `migration_required` delivery and
 recovery fields. OpDev deliberately does not invent an artifact, production-like
 environment, or recovery strategy.
 
+### First change, end to end
+
+Initialize OpDev once in an existing repository and review the inferred project
+contract before committing it:
+
+```sh
+opdev init --dry-run
+opdev init
+opdev check
+git add .opdev/project.yaml AGENTS.md CLAUDE.md
+git commit -m "chore: initialize OpDev"
+```
+
+After initialization, Codex and Claude Code read the persistent guidance and use
+the declared project authorities and commands automatically. Develop normally,
+then run the same checks locally that CI will enforce:
+
+```sh
+# Make the change with an agent or your usual tools.
+opdev check
+git add -- path/to/changed-file
+```
+
+If `opdev check` reports a required fact that automation cannot verify, review
+the change, fingerprint the complete staged index, and record only the justified
+assertions in `.opdev/evidence.yaml`:
+
+```sh
+opdev evidence fingerprint
+# Add a matching change entry to .opdev/evidence.yaml.
+git add .opdev/evidence.yaml
+opdev check --ci
+git commit -m "feat: describe the change"
+git push
+```
+
+The pull or merge request runs the provider's normal build and test commands
+plus the OpDev integration gate. Changing any staged content invalidates the
+fingerprint, so update the evidence only after the change is final. Delivery
+and compliance gates remain blocked until the project declares and proves its
+artifact, representative environments, and recovery path.
+
 Typical commands are:
 
 ```sh

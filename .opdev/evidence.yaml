@@ -31,7 +31,7 @@ project:
         summary: GitHub change CI declares read-only contents permission and uses full-SHA pinned actions.
         location: .github/workflows/opdev.yml
 changes:
-  - fingerprint: cc7973ce1fa9aed6f8102511999b0444c1c03b61a0bb97e05df46808cb41bd71
+  - fingerprint: ca451ca7470391ab5e7832bdac5486e60fc18cda27cd6c04dee41cfc39c5191d
     work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
     assertions:
       - rule_id: OPDEV-WORK-001
