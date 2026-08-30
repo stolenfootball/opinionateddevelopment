@@ -322,10 +322,10 @@ release-evidence:
   script:
     - export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$CI_COMMIT_SHA")"
     - cargo install --locked cargo-cyclonedx --version 0.5.9
-    - cargo cyclonedx --manifest-path crates/opdev-cli/Cargo.toml --format json --describe binaries --all-features --target all --override-filename opdev.cdx --spec-version 1.5
+    - cargo cyclonedx --manifest-path crates/opdev-cli/Cargo.toml --format json --describe binaries --all-features --target all --spec-version 1.5
     - mkdir release-bundle
     - mv release-artifacts/* release-bundle/
-    - mv crates/opdev-cli/opdev.cdx.json release-bundle/opdev-${OPDEV_VERSION}.cdx.json
+    - mv crates/opdev-cli/opdev_bin.cdx.json release-bundle/opdev-${OPDEV_VERSION}.cdx.json
     - cargo run --locked -p opdev-cli -- release evidence --artifact release-bundle/opdev-${OPDEV_VERSION}-x86_64-pc-windows-msvc.zip --artifact release-bundle/opdev-${OPDEV_VERSION}-aarch64-pc-windows-msvc.zip --artifact release-bundle/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz --artifact release-bundle/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz --artifact release-bundle/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz --artifact release-bundle/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz --artifact release-bundle/opdev-plugin-${OPDEV_VERSION}.tar.gz --sbom release-bundle/opdev-${OPDEV_VERSION}.cdx.json --source-uri "$CI_PROJECT_URL" --source-revision "$CI_COMMIT_SHA" --builder-id "https://github.com/stolenfootball/opinionateddevelopment/actions/runs/${GH_BUILD_RUN_ID}" --assurance-limitation "The CycloneDX 1.5 SBOM is an all-target dependency superset associated with every archive and may include components not shipped on a given target. GitHub Actions built and smoke-tested the immutable archives; the protected GitLab tag pipeline retrieved, digest-bound, signed, and published those exact bytes. This bundle does not by itself establish trusted-builder provenance or any SLSA Build level." --output release-bundle
     - cd release-bundle && sha256sum -c SHA256SUMS
   artifacts:
