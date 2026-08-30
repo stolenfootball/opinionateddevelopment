@@ -3,7 +3,7 @@
 All notable changes will be recorded here. OpDev follows Semantic Versioning once
 the public compatibility boundary stabilizes.
 
-## 0.1.0 - unreleased
+## 0.1.0 - 2026-08-30
 
 - Define the 37-rule OpDev and MinimumCD catalog with strict result semantics.
 - Add cross-platform Rust project discovery, initialization, checks, and reports.

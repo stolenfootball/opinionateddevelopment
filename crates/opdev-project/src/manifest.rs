@@ -212,6 +212,7 @@ impl ProjectManifest {
         if let Some(command) = &self.delivery.recovery.command {
             self.require_command(command, "delivery.recovery")?;
         }
+        self.validate_delivery()?;
         if let Some(authority) = &self.operations.observability_authority {
             self.require_authority(authority, "operations.observability_authority")?;
         }
@@ -250,6 +251,33 @@ impl ProjectManifest {
                 .map_err(|error| ManifestError::Semantic(error.to_string()))?;
         }
 
+        Ok(())
+    }
+
+    fn validate_delivery(&self) -> Result<(), ManifestError> {
+        if self.delivery.status == DeliveryStatus::Configured {
+            if self.project.ci.provider == CiProvider::Unconfigured {
+                return Err(ManifestError::Semantic(
+                    "configured delivery requires a configured CI provider".into(),
+                ));
+            }
+            if self.delivery.recovery.strategy == RecoveryStrategy::Unconfigured {
+                return Err(ManifestError::Semantic(
+                    "configured delivery requires a recovery strategy".into(),
+                ));
+            }
+            if !self
+                .delivery
+                .environments
+                .iter()
+                .any(|environment| environment.production_like)
+            {
+                return Err(ManifestError::Semantic(
+                    "configured delivery requires at least one production-like qualification environment"
+                        .into(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -895,5 +923,34 @@ mod tests {
             manifest.to_yaml(),
             Err(ManifestError::Semantic(message)) if message.contains("not supported")
         ));
+    }
+
+    #[test]
+    fn configured_delivery_requires_ci_recovery_and_a_representative_environment() {
+        let mut manifest = minimal_manifest();
+        manifest.delivery.status = DeliveryStatus::Configured;
+        manifest.project.ci.provider = CiProvider::Unconfigured;
+        assert!(matches!(
+            manifest.to_yaml(),
+            Err(ManifestError::Semantic(message)) if message.contains("configured CI provider")
+        ));
+
+        manifest.project.ci.provider = CiProvider::Gitlab;
+        assert!(matches!(
+            manifest.to_yaml(),
+            Err(ManifestError::Semantic(message)) if message.contains("recovery strategy")
+        ));
+
+        manifest.delivery.recovery.strategy = RecoveryStrategy::ForwardFix;
+        assert!(matches!(
+            manifest.to_yaml(),
+            Err(ManifestError::Semantic(message)) if message.contains("production-like")
+        ));
+
+        manifest.delivery.environments.push(Environment {
+            name: "consumer".into(),
+            production_like: true,
+        });
+        assert!(manifest.to_yaml().is_ok());
     }
 }

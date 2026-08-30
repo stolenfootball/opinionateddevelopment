@@ -10,6 +10,96 @@ project:
       - kind: test
         summary: Workspace tests parse schemas, manifests, profiles, CI templates, agent files, and protocol messages.
         location: crates
+  - rule_id: MCD-PIPELINE-001
+    outcome: passed
+    summary: A protected tag pipeline gives the definitive release verdict only after native builds, repeat packaging, evidence generation, signing, and publication succeed.
+    evidence:
+      - kind: ci
+        summary: RC2 completed every qualification and publication stage through the declared GitLab pipeline.
+        location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2803675236
+      - kind: policy
+        summary: Release operations define the required candidate and final verdicts and prohibit manual publication.
+        location: release/README.md
+  - rule_id: MCD-ARTIFACT-001
+    outcome: passed
+    summary: The release contract defines deployable native CLI archives, a shared agent-plugin archive, checksums, signatures, an SBOM, provenance, and successful smoke checks.
+    evidence:
+      - kind: ci
+        summary: The cross-platform builder qualifies all six native targets and the shared plugin payload before handoff.
+        location: .github/workflows/release-build.yml
+      - kind: release
+        summary: RC2 published the complete declared artifact and evidence set.
+        location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0-rc.2
+  - rule_id: MCD-ARTIFACT-002
+    outcome: passed
+    summary: Every archive is built once on its native runner, digest-bound to the exact source, and transferred unchanged to the sole publisher.
+    evidence:
+      - kind: ci
+        summary: GitLab retrieves the exact GitHub run artifacts, repeats packaging to detect nondeterminism, verifies digests, and signs those same bytes without rebuilding them.
+        location: .gitlab-ci.yml
+      - kind: release
+        summary: The release manifest and provenance bind RC2 artifact digests to source revision 103e1cd614fcbb171189bf48affd099170d0efab and its builder run.
+        location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0-rc.2
+  - rule_id: MCD-ENV-001
+    outcome: passed
+    summary: Native artifacts and both agent-plugin formats are qualified in environments representative of every supported consumer target.
+    evidence:
+      - kind: ci
+        summary: RC2 ran native build, deterministic-package, and smoke jobs on x86-64 and ARM64 Windows, Linux, and macOS runners.
+        location: https://github.com/stolenfootball/opinionateddevelopment/actions/runs/33330835504
+      - kind: validation
+        summary: The shared plugin passes both the Codex and Claude Code plugin validators.
+        location: plugins/opdev
+  - rule_id: MCD-RECOVERY-001
+    outcome: passed
+    summary: OpDev's immutable, stateless releases use an exercised safe roll-forward procedure while consumers can remain pinned to the last known-good version.
+    evidence:
+      - kind: policy
+        summary: The on-demand recovery procedure preserves evidence, restores trunk, requires regression protection, and republishes only through the canonical pipeline.
+        location: release/README.md
+      - kind: test
+        summary: RC1 stopped before publication, RC2 exercised the corrected path, and the RC2 consumer-link defect was corrected through the same merge and release flow for RC3.
+        location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/merge_requests/3
+  - rule_id: MCD-CONFIG-002
+    outcome: not_applicable
+    summary: OpDev has no consumer environment-specific behavioral configuration; release credentials and tag inputs are injected only into CI and never rebuilt into artifacts.
+    evidence:
+      - kind: architecture
+        summary: The distributed CLI and plugin are stateless and contain no destination-specific configuration layer.
+        location: release/README.md
+      - kind: ci
+        summary: Publication credentials and exact release identity enter only at the protected GitLab pipeline boundary.
+        location: .gitlab-ci.yml
+  - rule_id: OPDEV-TEST-007
+    outcome: passed
+    summary: External release qualification declares its native runner environments, GitHub and GitLab dependencies, per-tag freshness, visible variability, and blocking effect on publication.
+    evidence:
+      - kind: ci
+        summary: The build handoff is bound to an exact source revision and workflow run, retries are not hidden, and any unavailable or failing target blocks the protected tag pipeline.
+        location: .github/workflows/release-build.yml
+      - kind: policy
+        summary: Release qualification requires a fresh candidate run and representative consumer installation before a final tag.
+        location: release/README.md
+  - rule_id: OPDEV-SUPPLY-001
+    outcome: passed
+    summary: Every released archive has machine-readable provenance and a keyless signature binding its digest to the exact source and GitLab release identity.
+    evidence:
+      - kind: release
+        summary: RC2 includes an in-toto provenance statement, a release manifest, SHA-256 digests, and Sigstore bundles for all seven archives.
+        location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0-rc.2
+      - kind: specification
+        summary: Provenance scope and non-claims are explicitly defined.
+        location: spec/release-evidence.md
+  - rule_id: OPDEV-SUPPLY-002
+    outcome: passed
+    summary: Released Rust components are inventoried in a CycloneDX 1.5 SBOM whose digest is bound into the release manifest and provenance.
+    evidence:
+      - kind: release
+        summary: RC2 publishes the generated CycloneDX document alongside the artifacts and its checksummed release evidence.
+        location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0-rc.2
+      - kind: specification
+        summary: The all-target dependency inventory scope and its limitations are documented without overstating artifact-level completeness.
+        location: spec/release-evidence.md
   - rule_id: OPDEV-SEC-001
     outcome: passed
     summary: The project documents its attack surface and applies proportional controls at each untrusted boundary.
@@ -31,7 +121,7 @@ project:
         summary: GitHub change CI declares read-only contents permission and uses full-SHA pinned actions.
         location: .github/workflows/opdev.yml
 changes:
-  - fingerprint: e89dc45d393bbdde0aa9f33271b8e9a92e7d7b2fb80f27cbb2696f4350d65d47
+  - fingerprint: f9c2c180f5caee367bb6a8cdf4b9920d3cb94fb2969530f6a649f7970a18d38c
     work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
     assertions:
       - rule_id: OPDEV-WORK-001
@@ -110,7 +200,7 @@ changes:
             location: .opdev/project.yaml
       - rule_id: OPDEV-LEARN-001
         outcome: passed
-        summary: Dogfooding exposed stale human-evidence reuse, an invalid pinned SBOM-generator invocation, and malformed consumer download links; each finding was reproduced and corrected before final release.
+        summary: Dogfooding exposed stale human-evidence reuse, an invalid pinned SBOM-generator invocation, malformed consumer download links, and remote audit evidence downgrading; each finding was reproduced and corrected before final release.
         evidence:
           - kind: decision
             summary: The generalized failure, alternatives, selected design, limitation, and reversal trigger are documented.
@@ -124,3 +214,9 @@ changes:
           - kind: release
             summary: The second release candidate proved build, signing, and publication, then consumer verification exposed GitLab's automatic downloads prefix; the release template now supplies unprefixed direct asset paths.
             location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0-rc.2
+          - kind: ci
+            summary: Trunk qualification exposed deprecated Node 20 action runtimes and a redundant tag workflow; pinned supported actions and one build-only handoff now preserve the single delivery path.
+            location: .github/workflows
+          - kind: test
+            summary: A read-only remote capability that cannot prove branch lifecycle no longer erases stronger reviewed evidence; definitive remote failures still replace it.
+            location: crates/opdev-cli/src/main.rs
