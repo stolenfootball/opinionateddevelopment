@@ -31,7 +31,7 @@ project:
         summary: GitHub change CI declares read-only contents permission and uses full-SHA pinned actions.
         location: .github/workflows/opdev.yml
 changes:
-  - fingerprint: b524c3cc5d8a0185c86110d10014ef92f15a1ebaf7fecc1d55e6f99090b5c77c
+  - fingerprint: e89dc45d393bbdde0aa9f33271b8e9a92e7d7b2fb80f27cbb2696f4350d65d47
     work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
     assertions:
       - rule_id: OPDEV-WORK-001
@@ -110,7 +110,7 @@ changes:
             location: .opdev/project.yaml
       - rule_id: OPDEV-LEARN-001
         outcome: passed
-        summary: Dogfooding exposed both stale human-evidence reuse and an invalid pinned SBOM-generator invocation; each finding was reproduced and corrected before final release.
+        summary: Dogfooding exposed stale human-evidence reuse, an invalid pinned SBOM-generator invocation, and malformed consumer download links; each finding was reproduced and corrected before final release.
         evidence:
           - kind: decision
             summary: The generalized failure, alternatives, selected design, limitation, and reversal trigger are documented.
@@ -121,3 +121,6 @@ changes:
           - kind: ci
             summary: The first protected release candidate stopped before publication when cargo-cyclonedx rejected incompatible flags; the exact 0.5.9 generator was then run locally to confirm its output contract.
             location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2803657849
+          - kind: release
+            summary: The second release candidate proved build, signing, and publication, then consumer verification exposed GitLab's automatic downloads prefix; the release template now supplies unprefixed direct asset paths.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0-rc.2
