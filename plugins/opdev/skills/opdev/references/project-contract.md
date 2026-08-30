@@ -7,7 +7,7 @@
 - `commands` contains shell-free argument vectors, optional project-relative working directories, and timeouts.
 - `quality.risks` selects the characteristics that drive acceptance and testing depth.
 - `testing` declares change and regression policy, flake visibility, coverage strategy, and suites by lifecycle stage.
-- `delivery` describes the consumer-facing action, immutable artifact identity, representative environments, and recovery strategy. `migration_required` is a tracked gap, never compliance.
+- `delivery` describes the consumer-facing action, immutable artifact identity, representative environments, and recovery strategy. `migration_required` is a tracked gap, never compliance. `configured` is a reviewed assertion that the declared CI provider is the single supported delivery path; it requires a recovery strategy and at least one production-like qualification environment, while concrete pipeline and artifact claims still need independent evidence.
 - `operations` routes health and observability evidence for operated software.
 - `assurance.profiles` pins optional derived guidance by name and version.
 - `extensions.checks` adds project-owned protocol commands. Blocking extensions affect their declared gate but remain separate from core rule results.

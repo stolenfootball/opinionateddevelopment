@@ -589,11 +589,18 @@ fn apply_remote_capability(report: &mut CheckReport, rule_id: &str, capability: 
         .iter_mut()
         .find(|result| result.rule_id.as_str() == rule_id)
     {
+        if !remote_capability_should_replace(result.outcome, capability.outcome) {
+            return;
+        }
         result.outcome = capability.outcome;
         result.verifier = opdev_core::VerificationSource::Remote;
         result.evidence.clone_from(&capability.evidence);
         result.diagnostic.clone_from(&capability.diagnostic);
     }
+}
+
+fn remote_capability_should_replace(current: Outcome, remote: Outcome) -> bool {
+    remote != Outcome::Unverified || !current.satisfies_required_rule()
 }
 
 fn print_human_report(report: &CheckReport) {
@@ -818,5 +825,25 @@ mod tests {
         assert_eq!(claude_plugin["version"], expected);
         assert_eq!(codex_plugin["version"], expected);
         Ok(())
+    }
+
+    #[test]
+    fn inconclusive_remote_audit_does_not_erase_satisfying_evidence() {
+        assert!(!remote_capability_should_replace(
+            Outcome::Passed,
+            Outcome::Unverified
+        ));
+        assert!(!remote_capability_should_replace(
+            Outcome::NotApplicable,
+            Outcome::Unverified
+        ));
+        assert!(remote_capability_should_replace(
+            Outcome::Passed,
+            Outcome::Failed
+        ));
+        assert!(remote_capability_should_replace(
+            Outcome::MigrationRequired,
+            Outcome::Unverified
+        ));
     }
 }

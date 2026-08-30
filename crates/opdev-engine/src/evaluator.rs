@@ -225,6 +225,17 @@ fn evaluate_project_policy(rule: &Rule, manifest: &ProjectManifest) -> Option<Ev
             ),
             Some(".opdev/project.yaml"),
         ),
+        "MCD-DELIVERY-001" if manifest.delivery.status == DeliveryStatus::Configured => {
+            manifest_pass(
+                format!(
+                    "The configured {:?} delivery contract uses {:?} CI for the consumer path `{}`",
+                    manifest.delivery.mode,
+                    manifest.project.ci.provider,
+                    manifest.delivery.artifact.locator
+                ),
+                Some(".opdev/project.yaml"),
+            )
+        }
         _ => return None,
     };
     Some(evaluation)
@@ -808,6 +819,37 @@ mod tests {
                 .iter()
                 .any(|result| result.outcome == Outcome::Unverified)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn configured_delivery_declares_the_single_ci_governed_path()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let mut project = manifest();
+        project.delivery.status = DeliveryStatus::Configured;
+        project.delivery.environments = vec![Environment {
+            name: "consumer-matrix".into(),
+            production_like: true,
+        }];
+        project.delivery.recovery.strategy = RecoveryStrategy::ForwardFix;
+        let report = evaluate(
+            directory.path(),
+            &project,
+            CheckOptions {
+                execute_checks: false,
+                ..CheckOptions::local()
+            },
+        )?;
+        let Some(result) = report
+            .rules
+            .iter()
+            .find(|result| result.rule_id.as_str() == "MCD-DELIVERY-001")
+        else {
+            return Err(std::io::Error::other("missing delivery rule result").into());
+        };
+        assert_eq!(result.outcome, Outcome::Passed);
+        assert_eq!(result.verifier, VerificationSource::Manifest);
         Ok(())
     }
 

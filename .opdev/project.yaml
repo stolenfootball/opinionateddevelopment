@@ -98,14 +98,30 @@ testing:
     - pre_merge
     - post_merge
 delivery:
-  status: migration_required
+  status: configured
   mode: release
   artifact:
-    kind: plugin
-    locator: plugin:opdev
-  environments: []
+    kind: native-cli-and-agent-plugin
+    locator: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases
+  environments:
+  - name: windows-x86_64
+    production_like: true
+  - name: windows-aarch64
+    production_like: true
+  - name: linux-x86_64
+    production_like: true
+  - name: linux-aarch64
+    production_like: true
+  - name: macos-x86_64
+    production_like: true
+  - name: macos-aarch64
+    production_like: true
+  - name: codex-plugin-validator
+    production_like: true
+  - name: claude-code-plugin-validator
+    production_like: true
   recovery:
-    strategy: unconfigured
+    strategy: roll_forward
 assurance:
   profiles:
   - name: opdev-core
