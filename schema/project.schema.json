@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opdev.dev/schema/project-v1.json",
+  "title": "OpDev project contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "project", "authorities", "commands", "quality", "testing", "delivery", "assurance", "context"],
+  "properties": {
+    "schema": { "const": 1 },
+    "project": { "$ref": "#/$defs/project" },
+    "authorities": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/authority" }
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/command" }
+    },
+    "quality": { "$ref": "#/$defs/quality" },
+    "testing": { "$ref": "#/$defs/testing" },
+    "delivery": { "$ref": "#/$defs/delivery" },
+    "operations": { "$ref": "#/$defs/operations" },
+    "assurance": { "$ref": "#/$defs/assurance" },
+    "extensions": { "$ref": "#/$defs/extensions" },
+    "context": { "$ref": "#/$defs/context" }
+  },
+  "$defs": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "trunk", "ci"],
+      "properties": {
+        "kind": {
+          "enum": ["service", "web", "desktop", "mobile", "library", "cli", "plugin", "firmware", "embedded", "infrastructure", "database", "data_pipeline", "machine_learning", "documentation", "generic"]
+        },
+        "trunk": { "type": "string", "minLength": 1 },
+        "ci": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider"],
+          "properties": {
+            "provider": { "enum": ["github", "gitlab", "other", "unconfigured"] },
+            "remote": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "location"],
+      "properties": {
+        "kind": { "enum": ["path", "url", "tracker"] },
+        "location": { "type": "string", "minLength": 1 }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv"],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "working_directory": { "type": "string", "minLength": 1 },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risks"],
+      "properties": {
+        "risks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["functional", "reliability", "security", "performance", "compatibility", "maintainability", "usability", "accessibility", "safety", "data_integrity", "recoverability", "effectiveness"]
+          }
+        }
+      }
+    },
+    "testing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["change_tests", "escaped_defect_regressions", "flake_policy", "coverage", "suites"],
+      "properties": {
+        "strategy_authority": { "type": "string", "minLength": 1 },
+        "change_tests": { "const": "required" },
+        "escaped_defect_regressions": { "const": "required_or_justified" },
+        "flake_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["retries_visible", "quarantine_requires_owner_issue_expiry"],
+          "properties": {
+            "retries_visible": { "const": true },
+            "quarantine_requires_owner_issue_expiry": { "const": true }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": { "enum": ["unconfigured", "report", "non_regression", "changed_code_threshold", "critical_module_thresholds"] },
+            "threshold": { "type": "number", "minimum": 0, "maximum": 100 }
+          }
+        },
+        "suites": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/test_suite" }
+        }
+      }
+    },
+    "test_suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command", "stages"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+        "command": { "type": "string", "minLength": 1 },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["local", "pre_merge", "post_merge", "package", "delivery", "recovery", "scheduled", "evaluation"] }
+        }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "mode", "artifact", "environments", "recovery"],
+      "properties": {
+        "status": { "enum": ["configured", "migration_required"] },
+        "mode": { "enum": ["deploy", "publish", "install", "flash", "apply", "render", "release"] },
+        "artifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "locator"],
+          "properties": {
+            "kind": { "type": "string", "minLength": 1 },
+            "locator": { "type": "string", "minLength": 1 }
+          }
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "production_like"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "production_like": { "type": "boolean" }
+            }
+          }
+        },
+        "recovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["strategy"],
+          "properties": {
+            "strategy": { "enum": ["rollback", "redeploy_previous", "disable", "restore", "roll_forward", "forward_fix", "unconfigured"] },
+            "command": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "health_evidence": { "type": "string", "minLength": 1 },
+        "observability_authority": { "type": "string", "minLength": 1 }
+      }
+    },
+    "assurance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profiles"],
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "version": { "type": "string", "minLength": 1 },
+              "level": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "stage", "command", "blocking"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+              "stage": { "enum": ["specify", "design", "verify", "pre_merge", "post_merge", "package", "deliver", "smoke", "recover", "evaluate"] },
+              "command": { "type": "string", "minLength": 1 },
+              "blocking": { "type": "boolean" },
+              "authority": { "type": "string", "minLength": 1 },
+              "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+            }
+          }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["always", "routes"],
+      "properties": {
+        "always": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "routes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

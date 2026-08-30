@@ -1,10 +1,15 @@
 //! `OpDev` command-line entry point.
 
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use opdev_core::{EXTENSION_PROTOCOL_VERSION, PROJECT_SCHEMA_VERSION, RuleId, embedded_catalog};
+use opdev_project::{
+    CiProvider, CoverageMode, DeliveryStatus, MANIFEST_PATH, ProjectManifest, RecoveryStrategy,
+    discover,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "opdev", version, about = "Evidence-driven software delivery")]
@@ -16,7 +21,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Initialize or reconcile `OpDev` in a software project.
-    Init,
+    Init(InitArgs),
     /// Evaluate project requirements.
     Check(CheckArgs),
     /// Explain missing, contradictory, or unverified capabilities.
@@ -30,7 +35,20 @@ enum Command {
 }
 
 #[derive(Debug, Args)]
+struct InitArgs {
+    /// Directory inside the Git repository to initialize.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+    /// Print the discovered contract without writing files.
+    #[arg(long)]
+    dry_run: bool,
+}
+
+#[derive(Debug, Args)]
 struct CheckArgs {
+    /// Directory inside the initialized Git repository.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
     /// Evaluate CI-specific requirements.
     #[arg(long)]
     ci: bool,
@@ -41,6 +59,9 @@ struct CheckArgs {
 
 #[derive(Debug, Args)]
 struct DoctorArgs {
+    /// Directory inside the initialized Git repository.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
     /// Include read-only remote provider diagnostics.
     #[arg(long)]
     remote: bool,
@@ -74,26 +95,109 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
         Command::Rules(args) => show_rules(args),
-        Command::Init => not_implemented("init", "Phase 3"),
-        Command::Check(args) => {
-            let detail = match (args.ci, args.remote) {
-                (true, true) => "check --ci --remote",
-                (true, false) => "check --ci",
-                (false, true) => "check --remote",
-                (false, false) => "check",
-            };
-            not_implemented(detail, "Phases 3 through 7")
-        }
-        Command::Doctor(args) => {
-            let detail = if args.remote {
-                "doctor --remote"
-            } else {
-                "doctor"
-            };
-            not_implemented(detail, "Phases 3 through 7")
-        }
+        Command::Init(args) => initialize(&args),
+        Command::Check(args) => check_project(&args),
+        Command::Doctor(args) => doctor(&args),
         Command::Upgrade => not_implemented("upgrade", "Phase 4"),
     }
+}
+
+fn initialize(args: &InitArgs) -> Result<()> {
+    let discovery = discover(&args.root).context("could not inspect the repository")?;
+    let manifest_path = discovery.root.join(MANIFEST_PATH);
+
+    if manifest_path.exists() {
+        ProjectManifest::load(&manifest_path)
+            .context("the existing project contract is invalid")?;
+        println!(
+            "OpDev is already initialized at {}",
+            manifest_path.display()
+        );
+        return Ok(());
+    }
+
+    for evidence in &discovery.evidence {
+        eprintln!("discovered: {evidence}");
+    }
+    for warning in &discovery.warnings {
+        eprintln!("warning: {warning}");
+    }
+
+    if args.dry_run {
+        print!("{}", discovery.manifest.to_yaml()?);
+    } else {
+        discovery.manifest.write_new(&manifest_path)?;
+        println!("Initialized OpDev at {}", manifest_path.display());
+        println!(
+            "Review migration_required and unconfigured values before enforcing delivery gates."
+        );
+    }
+    Ok(())
+}
+
+fn check_project(args: &CheckArgs) -> Result<()> {
+    let (root, manifest) = load_project(&args.root)?;
+    println!(
+        "passed project contract {}",
+        root.join(MANIFEST_PATH).display()
+    );
+    if args.ci {
+        eprintln!("note: CI execution checks are added in Phase 6; the contract itself is valid");
+    }
+    if args.remote {
+        eprintln!("note: read-only remote auditing is added in Phase 7; no remote was queried");
+    }
+    if manifest.delivery.status == DeliveryStatus::MigrationRequired {
+        eprintln!("migration_required: delivery is not yet qualified");
+    }
+    Ok(())
+}
+
+fn doctor(args: &DoctorArgs) -> Result<()> {
+    let (root, manifest) = load_project(&args.root)?;
+    let mut findings = Vec::new();
+    if manifest.project.ci.provider == CiProvider::Unconfigured {
+        findings.push("CI provider is unconfigured");
+    }
+    if manifest.testing.coverage.mode == CoverageMode::Unconfigured {
+        findings.push("coverage evidence is unconfigured");
+    }
+    if manifest.delivery.status == DeliveryStatus::MigrationRequired {
+        findings.push("delivery qualification is migration_required");
+    }
+    if manifest.delivery.recovery.strategy == RecoveryStrategy::Unconfigured {
+        findings.push("automated recovery is unconfigured");
+    }
+    if manifest.commands.is_empty() {
+        findings.push("no canonical project commands are declared");
+    }
+
+    println!("Project: {}", root.display());
+    if findings.is_empty() {
+        println!("No project-contract gaps detected.");
+    } else {
+        for finding in findings {
+            println!("- {finding}");
+        }
+    }
+    if args.remote {
+        println!("- remote audit not run: read-only provider auditing is added in Phase 7");
+    }
+    Ok(())
+}
+
+fn load_project(start: &Path) -> Result<(PathBuf, ProjectManifest)> {
+    let discovery = discover(start).context("could not locate the Git repository")?;
+    let manifest_path = discovery.root.join(MANIFEST_PATH);
+    if !manifest_path.exists() {
+        bail!(
+            "OpDev is not initialized; run `opdev init --root {}` first",
+            discovery.root.display()
+        );
+    }
+    let manifest = ProjectManifest::load(&manifest_path)
+        .with_context(|| format!("could not validate `{}`", manifest_path.display()))?;
+    Ok((discovery.root, manifest))
 }
 
 fn show_rules(args: RulesArgs) -> Result<()> {
@@ -130,6 +234,7 @@ mod tests {
     fn final_command_surface_parses() {
         for arguments in [
             vec!["opdev", "init"],
+            vec!["opdev", "init", "--root", ".", "--dry-run"],
             vec!["opdev", "check", "--ci", "--remote"],
             vec!["opdev", "doctor", "--remote"],
             vec!["opdev", "upgrade"],
