@@ -5,11 +5,13 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
+use flate2::{Compression, GzBuilder};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+use zip::write::SimpleFileOptions;
 
 /// Release evidence bundle format emitted by this release.
 pub const RELEASE_EVIDENCE_VERSION: u32 = 1;
@@ -73,6 +75,306 @@ pub enum ReleaseEvidenceError {
     Serialize(#[from] serde_json::Error),
 }
 
+/// Failure while creating a deterministic release package.
+#[derive(Debug, Error)]
+pub enum PackageError {
+    /// A package input could not be inspected or read.
+    #[error("could not read package input `{path}`: {source}")]
+    Read {
+        /// Input path.
+        path: PathBuf,
+        /// Filesystem failure.
+        source: std::io::Error,
+    },
+    /// A package output could not be created or completed.
+    #[error("could not write package `{path}`: {source}")]
+    Write {
+        /// Output path.
+        path: PathBuf,
+        /// Filesystem failure.
+        source: std::io::Error,
+    },
+    /// ZIP encoding failed.
+    #[error("could not encode ZIP package `{path}`: {source}")]
+    Zip {
+        /// Output path.
+        path: PathBuf,
+        /// ZIP format failure.
+        source: zip::result::ZipError,
+    },
+    /// An input is neither a regular file nor a directory.
+    #[error("package input `{0}` must be a regular file or directory; symbolic links are refused")]
+    UnsupportedInput(PathBuf),
+    /// An archive destination is empty, absolute, or escapes the archive root.
+    #[error("package destination `{0}` must be a portable relative path")]
+    InvalidDestination(String),
+    /// Two inputs resolve to the same archive path.
+    #[error("package inputs contain duplicate destination `{0}`")]
+    DuplicateDestination(String),
+    /// No regular files were selected for the package.
+    #[error("release package must contain at least one regular file")]
+    Empty,
+}
+
+/// Deterministic archive encoding used for a release package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageFormat {
+    /// Gzip-compressed POSIX tar archive.
+    TarGz,
+    /// ZIP archive with stored file entries.
+    Zip,
+}
+
+/// One file or directory tree mapped into a release package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageInput {
+    /// Existing regular file or directory to package.
+    pub source: PathBuf,
+    /// Relative destination path inside the archive.
+    pub destination: String,
+    /// Whether every file selected by this input should be executable.
+    pub executable: bool,
+}
+
+/// Inputs required to create one deterministic release package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageRequest {
+    /// Files and directory trees included in the package.
+    pub inputs: Vec<PackageInput>,
+    /// Archive encoding.
+    pub format: PackageFormat,
+    /// New archive path. Existing files are never replaced.
+    pub output: PathBuf,
+}
+
+#[derive(Debug)]
+struct ResolvedPackageInput {
+    source: PathBuf,
+    destination: String,
+    mode: u32,
+}
+
+/// Creates a byte-reproducible release archive without replacing existing
+/// output.
+///
+/// Entries are sorted by portable archive path. Metadata uses zero timestamps,
+/// numeric owner and group zero for tar, and fixed Unix permissions. Symbolic
+/// links and path traversal are refused.
+///
+/// # Errors
+///
+/// Returns [`PackageError`] for invalid mappings, unsupported inputs,
+/// duplicate destinations, or filesystem and encoding failures.
+pub fn package_release(request: &PackageRequest) -> Result<(), PackageError> {
+    let entries = resolve_package_inputs(&request.inputs)?;
+    if entries.is_empty() {
+        return Err(PackageError::Empty);
+    }
+    if let Some(parent) = request
+        .output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|source| PackageError::Write {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    match request.format {
+        PackageFormat::TarGz => write_tar_gz(&entries, &request.output),
+        PackageFormat::Zip => write_zip(&entries, &request.output),
+    }
+}
+
+fn resolve_package_inputs(
+    inputs: &[PackageInput],
+) -> Result<Vec<ResolvedPackageInput>, PackageError> {
+    let mut resolved = Vec::new();
+    for input in inputs {
+        let destination = normalize_destination(&input.destination)?;
+        collect_package_input(input, &input.source, &destination, &mut resolved)?;
+    }
+    resolved.sort_by(|left, right| left.destination.cmp(&right.destination));
+    let mut destinations = HashSet::new();
+    for entry in &resolved {
+        if !destinations.insert(entry.destination.clone()) {
+            return Err(PackageError::DuplicateDestination(
+                entry.destination.clone(),
+            ));
+        }
+    }
+    Ok(resolved)
+}
+
+fn collect_package_input(
+    input: &PackageInput,
+    source: &Path,
+    destination: &str,
+    resolved: &mut Vec<ResolvedPackageInput>,
+) -> Result<(), PackageError> {
+    let metadata = fs::symlink_metadata(source).map_err(|source_error| PackageError::Read {
+        path: source.to_path_buf(),
+        source: source_error,
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(PackageError::UnsupportedInput(source.to_path_buf()));
+    }
+    if metadata.is_file() {
+        let executable = input.executable
+            || Path::new(destination)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("sh"));
+        resolved.push(ResolvedPackageInput {
+            source: source.to_path_buf(),
+            destination: destination.to_owned(),
+            mode: if executable { 0o755 } else { 0o644 },
+        });
+        return Ok(());
+    }
+    if !metadata.is_dir() {
+        return Err(PackageError::UnsupportedInput(source.to_path_buf()));
+    }
+
+    let mut children = fs::read_dir(source)
+        .map_err(|source_error| PackageError::Read {
+            path: source.to_path_buf(),
+            source: source_error,
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source_error| PackageError::Read {
+            path: source.to_path_buf(),
+            source: source_error,
+        })?;
+    children.sort_by_key(std::fs::DirEntry::file_name);
+    for child in children {
+        let name = child
+            .file_name()
+            .into_string()
+            .map_err(|_| PackageError::UnsupportedInput(child.path()))?;
+        let child_destination = format!("{destination}/{name}");
+        collect_package_input(input, &child.path(), &child_destination, resolved)?;
+    }
+    Ok(())
+}
+
+fn normalize_destination(destination: &str) -> Result<String, PackageError> {
+    let portable = destination.replace('\\', "/");
+    let path = Path::new(&portable);
+    if portable.is_empty()
+        || path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(PackageError::InvalidDestination(destination.to_owned()));
+    }
+    let components = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => value.to_str(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if components.is_empty() || components.iter().any(|component| component.is_empty()) {
+        return Err(PackageError::InvalidDestination(destination.to_owned()));
+    }
+    Ok(components.join("/"))
+}
+
+fn create_new_output(path: &Path) -> Result<fs::File, PackageError> {
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|source| PackageError::Write {
+            path: path.to_path_buf(),
+            source,
+        })
+}
+
+fn write_tar_gz(entries: &[ResolvedPackageInput], output: &Path) -> Result<(), PackageError> {
+    let output_file = create_new_output(output)?;
+    let encoder = GzBuilder::new()
+        .mtime(0)
+        .write(output_file, Compression::best());
+    let mut archive = tar::Builder::new(encoder);
+    archive.mode(tar::HeaderMode::Deterministic);
+    for entry in entries {
+        let mut source =
+            fs::File::open(&entry.source).map_err(|source_error| PackageError::Read {
+                path: entry.source.clone(),
+                source: source_error,
+            })?;
+        let size = source
+            .metadata()
+            .map_err(|source_error| PackageError::Read {
+                path: entry.source.clone(),
+                source: source_error,
+            })?
+            .len();
+        let mut header = tar::Header::new_gnu();
+        header.set_size(size);
+        header.set_mode(entry.mode);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mtime(0);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, &entry.destination, &mut source)
+            .map_err(|source_error| PackageError::Write {
+                path: output.to_path_buf(),
+                source: source_error,
+            })?;
+    }
+    archive.finish().map_err(|source| PackageError::Write {
+        path: output.to_path_buf(),
+        source,
+    })?;
+    let encoder = archive.into_inner().map_err(|source| PackageError::Write {
+        path: output.to_path_buf(),
+        source,
+    })?;
+    encoder.finish().map_err(|source| PackageError::Write {
+        path: output.to_path_buf(),
+        source,
+    })?;
+    Ok(())
+}
+
+fn write_zip(entries: &[ResolvedPackageInput], output: &Path) -> Result<(), PackageError> {
+    let output_file = create_new_output(output)?;
+    let mut archive = zip::ZipWriter::new(output_file);
+    for entry in entries {
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .last_modified_time(zip::DateTime::default())
+            .unix_permissions(entry.mode);
+        archive
+            .start_file(&entry.destination, options)
+            .map_err(|source| PackageError::Zip {
+                path: output.to_path_buf(),
+                source,
+            })?;
+        let mut source =
+            fs::File::open(&entry.source).map_err(|source_error| PackageError::Read {
+                path: entry.source.clone(),
+                source: source_error,
+            })?;
+        std::io::copy(&mut source, &mut archive).map_err(|source| PackageError::Write {
+            path: output.to_path_buf(),
+            source,
+        })?;
+    }
+    archive.finish().map_err(|source| PackageError::Zip {
+        path: output.to_path_buf(),
+        source,
+    })?;
+    Ok(())
+}
+
 /// Inputs required to generate a release evidence bundle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceRequest {
@@ -88,6 +390,8 @@ pub struct EvidenceRequest {
     pub source_revision: String,
     /// Builder identity URI supplied by the build environment.
     pub builder_id: String,
+    /// Optional caller-supplied limitation that replaces the conservative default.
+    pub assurance_limitation: Option<String>,
     /// New or existing directory in which new evidence files are created.
     pub output_directory: PathBuf,
 }
@@ -235,6 +539,9 @@ fn prepare_manifest(request: &EvidenceRequest) -> Result<ReleaseManifest, Releas
     validate_non_empty("source_revision", &request.source_revision)?;
     validate_non_empty("builder_id", &request.builder_id)?;
     validate_non_empty("sbom_version", &request.sbom_version)?;
+    if let Some(limitation) = &request.assurance_limitation {
+        validate_non_empty("assurance_limitation", limitation)?;
+    }
     if request.artifacts.is_empty() {
         return Err(ReleaseEvidenceError::EmptyField("artifacts"));
     }
@@ -288,7 +595,9 @@ fn prepare_manifest(request: &EvidenceRequest) -> Result<ReleaseManifest, Releas
         builder_id: request.builder_id.clone(),
         artifacts,
         sbom,
-        assurance_limitation: "This bundle identifies artifacts, source, SBOM, and a supplied builder ID; it does not by itself establish trusted-builder provenance, signing, or any SLSA Build level.".into(),
+        assurance_limitation: request.assurance_limitation.clone().unwrap_or_else(|| {
+            "This bundle identifies artifacts, source, SBOM, and a supplied builder ID; it does not by itself establish trusted-builder provenance, signing, or any SLSA Build level.".into()
+        }),
     })
 }
 
@@ -435,6 +744,39 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), ReleaseEvidenceError> {
 mod tests {
     use super::*;
 
+    fn package_inputs(root: &Path) -> Result<Vec<PackageInput>, Box<dyn std::error::Error>> {
+        let plugin = root.join("plugin");
+        fs::create_dir_all(plugin.join("hooks"))?;
+        fs::write(root.join("opdev"), b"native-binary")?;
+        fs::write(plugin.join("README.md"), b"plugin")?;
+        fs::write(plugin.join("hooks").join("context.sh"), b"#!/bin/sh\n")?;
+        Ok(vec![
+            PackageInput {
+                source: root.join("opdev"),
+                destination: "opdev".into(),
+                executable: true,
+            },
+            PackageInput {
+                source: plugin,
+                destination: "plugin/opdev".into(),
+                executable: false,
+            },
+        ])
+    }
+
+    fn package_bytes(
+        inputs: &[PackageInput],
+        format: PackageFormat,
+        output: &Path,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        package_release(&PackageRequest {
+            inputs: inputs.to_vec(),
+            format,
+            output: output.to_path_buf(),
+        })?;
+        Ok(fs::read(output)?)
+    }
+
     fn request(root: &Path) -> Result<EvidenceRequest, Box<dyn std::error::Error>> {
         let artifact = root.join("opdev.tar.gz");
         let sbom = root.join("opdev.cdx.json");
@@ -450,6 +792,7 @@ mod tests {
             source_uri: "https://gitlab.com/example/opdev".into(),
             source_revision: "0123456789abcdef".into(),
             builder_id: "https://gitlab.com/example/opdev/-/runners/1".into(),
+            assurance_limitation: None,
             output_directory: root.join("evidence"),
         })
     }
@@ -503,11 +846,132 @@ mod tests {
         ));
 
         let other = tempfile::tempdir()?;
-        let mut request = request(other.path())?;
-        request.sbom_version = "1.7".into();
+        let mut wrong_version_request = request(other.path())?;
+        wrong_version_request.sbom_version = "1.7".into();
         assert!(matches!(
-            generate_evidence(&request),
+            generate_evidence(&wrong_version_request),
             Err(ReleaseEvidenceError::SbomFormat { .. })
+        ));
+
+        let empty_limitation = tempfile::tempdir()?;
+        let mut empty_limitation_request = request(empty_limitation.path())?;
+        empty_limitation_request.assurance_limitation = Some("  ".into());
+        assert!(matches!(
+            generate_evidence(&empty_limitation_request),
+            Err(ReleaseEvidenceError::EmptyField("assurance_limitation"))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn release_packages_are_deterministic_and_portable() -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let inputs = package_inputs(root.path())?;
+
+        let first_tar = root.path().join("first.tar.gz");
+        let second_tar = root.path().join("second.tar.gz");
+        assert_eq!(
+            package_bytes(&inputs, PackageFormat::TarGz, &first_tar)?,
+            package_bytes(&inputs, PackageFormat::TarGz, &second_tar)?
+        );
+        let decoder = flate2::read::GzDecoder::new(fs::File::open(&first_tar)?);
+        let mut archive = tar::Archive::new(decoder);
+        let mut tar_entries = Vec::new();
+        for entry in archive.entries()? {
+            let entry = entry?;
+            tar_entries.push((
+                entry.path()?.to_string_lossy().into_owned(),
+                entry.header().mode()?,
+            ));
+        }
+        assert_eq!(
+            tar_entries,
+            vec![
+                ("opdev".into(), 0o755),
+                ("plugin/opdev/README.md".into(), 0o644),
+                ("plugin/opdev/hooks/context.sh".into(), 0o755),
+            ]
+        );
+
+        let first_zip = root.path().join("first.zip");
+        let second_zip = root.path().join("second.zip");
+        assert_eq!(
+            package_bytes(&inputs, PackageFormat::Zip, &first_zip)?,
+            package_bytes(&inputs, PackageFormat::Zip, &second_zip)?
+        );
+        let mut archive = zip::ZipArchive::new(fs::File::open(&first_zip)?)?;
+        let mut zip_entries = Vec::new();
+        for index in 0..archive.len() {
+            let entry = archive.by_index(index)?;
+            zip_entries.push((entry.name().to_owned(), entry.unix_mode()));
+        }
+        assert_eq!(
+            zip_entries,
+            vec![
+                ("opdev".into(), Some(0o100_755)),
+                ("plugin/opdev/README.md".into(), Some(0o100_644)),
+                ("plugin/opdev/hooks/context.sh".into(), Some(0o100_755)),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn packaging_refuses_traversal_duplicates_and_overwrite()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let source = root.path().join("input");
+        fs::write(&source, b"input")?;
+        let output = root.path().join("output.zip");
+
+        let invalid = PackageRequest {
+            inputs: vec![PackageInput {
+                source: source.clone(),
+                destination: "../escape".into(),
+                executable: false,
+            }],
+            format: PackageFormat::Zip,
+            output: output.clone(),
+        };
+        assert!(matches!(
+            package_release(&invalid),
+            Err(PackageError::InvalidDestination(_))
+        ));
+
+        let duplicate = PackageRequest {
+            inputs: vec![
+                PackageInput {
+                    source: source.clone(),
+                    destination: "same".into(),
+                    executable: false,
+                },
+                PackageInput {
+                    source: source.clone(),
+                    destination: "same".into(),
+                    executable: false,
+                },
+            ],
+            format: PackageFormat::Zip,
+            output: output.clone(),
+        };
+        assert!(matches!(
+            package_release(&duplicate),
+            Err(PackageError::DuplicateDestination(_))
+        ));
+
+        let valid = PackageRequest {
+            inputs: vec![PackageInput {
+                source,
+                destination: "input".into(),
+                executable: false,
+            }],
+            format: PackageFormat::Zip,
+            output,
+        };
+        package_release(&valid)?;
+        assert!(matches!(
+            package_release(&valid),
+            Err(PackageError::Write { .. })
         ));
         Ok(())
     }

@@ -6,7 +6,10 @@ stages:
 
 variables:
   CARGO_TERM_COLOR: always
+  OPDEV_VERSION: "0.1.0"
   RUST_IMAGE: rust:1.97.0-bookworm
+  RUST_VERSION: "1.97.0"
+  RUSTUP_VERSION: "1.29.0"
 
 workflow:
   rules:
@@ -40,37 +43,209 @@ quality:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_TAG'
 
-release-bundle-linux-x86_64:
+.release-package-rules:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - .gitlab-ci.yml
+        - Cargo.lock
+        - Cargo.toml
+        - crates/opdev-cli/**/*
+        - crates/opdev-release/**/*
+        - plugins/opdev/**/*
+        - .agents/plugins/marketplace.json
+        - .claude-plugin/marketplace.json
+        - release/**/*
+
+package-linux-x86_64:
   stage: package
   image: rust:1.97.0-bookworm
   needs: [quality]
-  before_script:
-    - apt-get update
-    - apt-get install --yes --no-install-recommends ca-certificates curl
-    - rm -rf /var/lib/apt/lists/*
+  tags: [linux, docker, proxmox]
   script:
-    - cargo install --locked cargo-cyclonedx --version 0.5.9
-    - cargo cyclonedx --manifest-path crates/opdev-cli/Cargo.toml --format json --describe binaries --all-features --target x86_64-unknown-linux-gnu --override-filename opdev.cdx --spec-version 1.5
     - cargo build --release --locked -p opdev-cli --target x86_64-unknown-linux-gnu
-    - mkdir -p release-staging/plugin release-bundle
-    - cp target/x86_64-unknown-linux-gnu/release/opdev release-staging/opdev
-    - cp -R plugins/opdev release-staging/plugin/opdev
-    - tar -C release-staging -czf release-bundle/opdev-x86_64-unknown-linux-gnu.tar.gz opdev plugin
-    - cp crates/opdev-cli/opdev.cdx.json release-bundle/opdev-x86_64-unknown-linux-gnu.cdx.json
-    - cargo run --locked -p opdev-cli -- release evidence --artifact release-bundle/opdev-x86_64-unknown-linux-gnu.tar.gz --sbom release-bundle/opdev-x86_64-unknown-linux-gnu.cdx.json --source-uri "$CI_PROJECT_URL" --source-revision "$CI_COMMIT_SHA" --builder-id "$CI_SERVER_URL/$CI_PROJECT_PATH/-/jobs/$CI_JOB_ID" --output release-bundle
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --executable-entry target/x86_64-unknown-linux-gnu/release/opdev=opdev --entry LICENSE=LICENSE --entry README.md=README.md --output release-artifacts/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --entry .agents/plugins/marketplace.json=.agents/plugins/marketplace.json --entry .claude-plugin/marketplace.json=.claude-plugin/marketplace.json --entry plugins/opdev=plugins/opdev --entry LICENSE=LICENSE --output release-artifacts/opdev-plugin-${OPDEV_VERSION}.tar.gz
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --executable-entry target/x86_64-unknown-linux-gnu/release/opdev=opdev --entry LICENSE=LICENSE --entry README.md=README.md --output release-repro/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz
+    - cmp release-artifacts/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz release-repro/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz
+    - mkdir package-smoke plugin-smoke
+    - tar -xzf release-artifacts/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz -C package-smoke
+    - package-smoke/opdev version | grep -F "opdev ${OPDEV_VERSION}"
+    - tar -xzf release-artifacts/opdev-plugin-${OPDEV_VERSION}.tar.gz -C plugin-smoke
+    - test -f plugin-smoke/.agents/plugins/marketplace.json
+    - test -f plugin-smoke/.claude-plugin/marketplace.json
+    - test -f plugin-smoke/plugins/opdev/skills/opdev/SKILL.md
+  artifacts:
+    paths:
+      - release-artifacts/
+    expire_in: 7 days
+  extends: .release-package-rules
+
+package-linux-aarch64:
+  stage: package
+  image: rust:1.97.0-bookworm
+  needs: [quality]
+  tags: [saas-linux-small-arm64]
+  script:
+    - cargo build --release --locked -p opdev-cli --target aarch64-unknown-linux-gnu
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --executable-entry target/aarch64-unknown-linux-gnu/release/opdev=opdev --entry LICENSE=LICENSE --entry README.md=README.md --output release-artifacts/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --executable-entry target/aarch64-unknown-linux-gnu/release/opdev=opdev --entry LICENSE=LICENSE --entry README.md=README.md --output release-repro/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz
+    - cmp release-artifacts/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz release-repro/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz
+    - mkdir package-smoke
+    - tar -xzf release-artifacts/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz -C package-smoke
+    - package-smoke/opdev version | grep -F "opdev ${OPDEV_VERSION}"
+  artifacts:
+    paths:
+      - release-artifacts/
+    expire_in: 7 days
+  extends: .release-package-rules
+
+package-windows:
+  stage: package
+  needs: [quality]
+  tags: [saas-windows-medium-amd64]
+  script:
+    - |
+      $ErrorActionPreference = "Stop"
+      $rustupTarget = "x86_64-pc-windows-msvc"
+      $rustupUrl = "https://static.rust-lang.org/rustup/archive/$env:RUSTUP_VERSION/$rustupTarget/rustup-init.exe"
+      Invoke-WebRequest -UseBasicParsing $rustupUrl -OutFile rustup-init.exe
+      Invoke-WebRequest -UseBasicParsing "$rustupUrl.sha256" -OutFile rustup-init.exe.sha256
+      $expected = ((Get-Content rustup-init.exe.sha256 -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+      $actual = (Get-FileHash rustup-init.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($actual -ne $expected) { throw "rustup-init checksum mismatch" }
+      & .\rustup-init.exe -y --no-modify-path --profile minimal --default-toolchain $env:RUST_VERSION
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+      rustup target add --toolchain $env:RUST_VERSION x86_64-pc-windows-msvc aarch64-pc-windows-msvc
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      function Import-VsEnvironment([string]$architecture) {
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if (-not $installation) { throw "Visual Studio C++ build tools are unavailable" }
+        $developerCommand = Join-Path $installation "Common7\Tools\VsDevCmd.bat"
+        cmd.exe /s /c "`"$developerCommand`" -no_logo -arch=$architecture -host_arch=x64 && set" | ForEach-Object {
+          if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "Env:$($matches[1])" -Value $matches[2] }
+        }
+      }
+
+      function Assert-PeMachine([string]$path, [uint16]$expectedMachine) {
+        $bytes = [IO.File]::ReadAllBytes($path)
+        $header = [BitConverter]::ToInt32($bytes, 0x3c)
+        $machine = [BitConverter]::ToUInt16($bytes, $header + 4)
+        if ($machine -ne $expectedMachine) { throw "unexpected PE machine 0x$($machine.ToString('x4')) in $path" }
+      }
+
+      Import-VsEnvironment "x64"
+      cargo test --locked -p opdev-release
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      cargo build --release --locked -p opdev-cli --target x86_64-pc-windows-msvc
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      Assert-PeMachine "target\x86_64-pc-windows-msvc\release\opdev.exe" 0x8664
+      cargo run --locked -p opdev-cli -- release package --format zip --executable-entry "target/x86_64-pc-windows-msvc/release/opdev.exe=opdev.exe" --entry "LICENSE=LICENSE" --entry "README.md=README.md" --output "release-artifacts/opdev-$env:OPDEV_VERSION-x86_64-pc-windows-msvc.zip"
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      cargo run --locked -p opdev-cli -- release package --format zip --executable-entry "target/x86_64-pc-windows-msvc/release/opdev.exe=opdev.exe" --entry "LICENSE=LICENSE" --entry "README.md=README.md" --output "release-repro/opdev-$env:OPDEV_VERSION-x86_64-pc-windows-msvc.zip"
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if ((Get-FileHash "release-artifacts/opdev-$env:OPDEV_VERSION-x86_64-pc-windows-msvc.zip").Hash -ne (Get-FileHash "release-repro/opdev-$env:OPDEV_VERSION-x86_64-pc-windows-msvc.zip").Hash) { throw "x86_64 Windows package is not reproducible" }
+      Expand-Archive "release-artifacts/opdev-$env:OPDEV_VERSION-x86_64-pc-windows-msvc.zip" -DestinationPath package-smoke
+      & .\package-smoke\opdev.exe version
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      Import-VsEnvironment "arm64"
+      cargo build --release --locked -p opdev-cli --target aarch64-pc-windows-msvc
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      Assert-PeMachine "target\aarch64-pc-windows-msvc\release\opdev.exe" 0xaa64
+      cargo run --locked -p opdev-cli -- release package --format zip --executable-entry "target/aarch64-pc-windows-msvc/release/opdev.exe=opdev.exe" --entry "LICENSE=LICENSE" --entry "README.md=README.md" --output "release-artifacts/opdev-$env:OPDEV_VERSION-aarch64-pc-windows-msvc.zip"
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      cargo run --locked -p opdev-cli -- release package --format zip --executable-entry "target/aarch64-pc-windows-msvc/release/opdev.exe=opdev.exe" --entry "LICENSE=LICENSE" --entry "README.md=README.md" --output "release-repro/opdev-$env:OPDEV_VERSION-aarch64-pc-windows-msvc.zip"
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if ((Get-FileHash "release-artifacts/opdev-$env:OPDEV_VERSION-aarch64-pc-windows-msvc.zip").Hash -ne (Get-FileHash "release-repro/opdev-$env:OPDEV_VERSION-aarch64-pc-windows-msvc.zip").Hash) { throw "ARM64 Windows package is not reproducible" }
+  artifacts:
+    paths:
+      - release-artifacts/
+    expire_in: 7 days
+  extends: .release-package-rules
+
+package-macos:
+  stage: package
+  needs: [quality]
+  tags: [saas-macos-medium-m1]
+  image: macos-15-xcode-16
+  variables:
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+  before_script:
+    - export OPDEV_CARGO_HOME="$CI_PROJECT_DIR/.cargo-home"
+    - export OPDEV_RUSTUP_HOME="$CI_PROJECT_DIR/.rustup-home"
+    - export CARGO_HOME="$OPDEV_CARGO_HOME"
+    - export RUSTUP_HOME="$OPDEV_RUSTUP_HOME"
+    - export PATH="$CARGO_HOME/bin:$PATH"
+    - export RUSTUP_TARGET="aarch64-apple-darwin"
+    - export RUSTUP_URL="https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUSTUP_TARGET}/rustup-init"
+    - curl --fail --location --proto '=https' --tlsv1.2 "$RUSTUP_URL" --output rustup-init
+    - curl --fail --location --proto '=https' --tlsv1.2 "$RUSTUP_URL.sha256" --output rustup-init.sha256
+    - echo "$(cut -d ' ' -f 1 rustup-init.sha256)  rustup-init" | shasum -a 256 --check
+    - chmod +x rustup-init
+    - ./rustup-init -y --no-modify-path --profile minimal --default-toolchain "$RUST_VERSION"
+    - rustup target add --toolchain "$RUST_VERSION" aarch64-apple-darwin x86_64-apple-darwin
+  script:
+    - cargo test --locked -p opdev-release
+    - cargo build --release --locked -p opdev-cli --target aarch64-apple-darwin
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --executable-entry target/aarch64-apple-darwin/release/opdev=opdev --entry LICENSE=LICENSE --entry README.md=README.md --output release-artifacts/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --executable-entry target/aarch64-apple-darwin/release/opdev=opdev --entry LICENSE=LICENSE --entry README.md=README.md --output release-repro/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz
+    - cmp release-artifacts/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz release-repro/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz
+    - mkdir package-smoke-arm64 package-smoke-x86_64
+    - tar -xzf release-artifacts/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz -C package-smoke-arm64
+    - package-smoke-arm64/opdev version | grep -F "opdev ${OPDEV_VERSION}"
+    - cargo build --release --locked -p opdev-cli --target x86_64-apple-darwin
+    - lipo -info target/x86_64-apple-darwin/release/opdev | grep -F x86_64
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --executable-entry target/x86_64-apple-darwin/release/opdev=opdev --entry LICENSE=LICENSE --entry README.md=README.md --output release-artifacts/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz
+    - cargo run --locked -p opdev-cli -- release package --format tar-gz --executable-entry target/x86_64-apple-darwin/release/opdev=opdev --entry LICENSE=LICENSE --entry README.md=README.md --output release-repro/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz
+    - cmp release-artifacts/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz release-repro/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz
+    - tar -xzf release-artifacts/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz -C package-smoke-x86_64
+    - arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
+    - arch -x86_64 package-smoke-x86_64/opdev version | grep -F "opdev ${OPDEV_VERSION}"
+  artifacts:
+    paths:
+      - release-artifacts/
+    expire_in: 7 days
+  extends: .release-package-rules
+
+release-evidence:
+  stage: package
+  image: rust:1.97.0-bookworm
+  tags: [linux, docker, proxmox]
+  needs:
+    - job: package-linux-x86_64
+      artifacts: true
+    - job: package-linux-aarch64
+      artifacts: true
+    - job: package-windows
+      artifacts: true
+    - job: package-macos
+      artifacts: true
+  script:
+    - export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$CI_COMMIT_SHA")"
+    - cargo install --locked cargo-cyclonedx --version 0.5.9
+    - cargo cyclonedx --manifest-path crates/opdev-cli/Cargo.toml --format json --describe binaries --all-features --target all --override-filename opdev.cdx --spec-version 1.5
+    - mkdir release-bundle
+    - mv release-artifacts/* release-bundle/
+    - mv crates/opdev-cli/opdev.cdx.json release-bundle/opdev-${OPDEV_VERSION}.cdx.json
+    - cargo run --locked -p opdev-cli -- release evidence --artifact release-bundle/opdev-${OPDEV_VERSION}-x86_64-pc-windows-msvc.zip --artifact release-bundle/opdev-${OPDEV_VERSION}-aarch64-pc-windows-msvc.zip --artifact release-bundle/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz --artifact release-bundle/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz --artifact release-bundle/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz --artifact release-bundle/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz --artifact release-bundle/opdev-plugin-${OPDEV_VERSION}.tar.gz --sbom release-bundle/opdev-${OPDEV_VERSION}.cdx.json --source-uri "$CI_PROJECT_URL" --source-revision "$CI_COMMIT_SHA" --builder-id "$CI_PROJECT_URL/-/pipelines/$CI_PIPELINE_ID" --assurance-limitation "The CycloneDX 1.5 SBOM is an all-target dependency superset associated with every archive and may include components not shipped on a given target. This bundle identifies artifact, source, SBOM, and pipeline identity; it does not by itself establish trusted-builder provenance or any SLSA Build level." --output release-bundle
     - cd release-bundle && sha256sum -c SHA256SUMS
   artifacts:
     paths:
       - release-bundle/
     expire_in: never
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/'
 
-sign-release-linux-x86_64:
+sign-release:
   stage: sign
   image: alpine:3.23.5
   needs:
-    - job: release-bundle-linux-x86_64
+    - job: release-evidence
       artifacts: true
   variables:
     COSIGN_YES: "true"
@@ -80,20 +255,19 @@ sign-release-linux-x86_64:
   before_script:
     - apk add --no-cache cosign
   script:
-    - cosign sign-blob release-bundle/opdev-x86_64-unknown-linux-gnu.tar.gz --bundle release-bundle/opdev-x86_64-unknown-linux-gnu.sigstore.json
-    - cosign verify-blob release-bundle/opdev-x86_64-unknown-linux-gnu.tar.gz --bundle release-bundle/opdev-x86_64-unknown-linux-gnu.sigstore.json --certificate-identity "${CI_PROJECT_URL}//.gitlab-ci.yml@refs/tags/${CI_COMMIT_TAG}" --certificate-oidc-issuer "$CI_SERVER_URL"
+    - 'for artifact in release-bundle/*.tar.gz release-bundle/*.zip; do cosign sign-blob "$artifact" --bundle "$artifact.sigstore.json"; cosign verify-blob "$artifact" --bundle "$artifact.sigstore.json" --certificate-identity "${CI_PROJECT_URL}//.gitlab-ci.yml@refs/tags/${CI_COMMIT_TAG}" --certificate-oidc-issuer "$CI_SERVER_URL"; done'
   artifacts:
     paths:
       - release-bundle/
     expire_in: never
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/'
 
 publish-gitlab:
   stage: publish
   image: rust:1.97.0-bookworm
   needs:
-    - job: sign-release-linux-x86_64
+    - job: sign-release
       artifacts: true
   before_script:
     - apt-get update
@@ -102,7 +276,7 @@ publish-gitlab:
   script:
     - 'for file in release-bundle/*; do name=$(basename "$file"); curl --fail --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file "$file" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/$name"; done'
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/'
 
 create-gitlab-release:
   stage: publish
@@ -116,15 +290,51 @@ create-gitlab-release:
     description: Release artifacts, CycloneDX SBOM, checksums, release manifest, and SLSA-compatible provenance generated by the tag pipeline.
     assets:
       links:
-        - name: opdev-x86_64-unknown-linux-gnu.tar.gz
-          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-x86_64-unknown-linux-gnu.tar.gz
-          direct_asset_path: /downloads/opdev-x86_64-unknown-linux-gnu.tar.gz
-        - name: opdev-x86_64-unknown-linux-gnu.cdx.json
-          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-x86_64-unknown-linux-gnu.cdx.json
-          direct_asset_path: /downloads/opdev-x86_64-unknown-linux-gnu.cdx.json
-        - name: opdev-x86_64-unknown-linux-gnu.sigstore.json
-          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-x86_64-unknown-linux-gnu.sigstore.json
-          direct_asset_path: /downloads/opdev-x86_64-unknown-linux-gnu.sigstore.json
+        - name: opdev-${OPDEV_VERSION}-x86_64-pc-windows-msvc.zip
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-x86_64-pc-windows-msvc.zip
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-x86_64-pc-windows-msvc.zip
+        - name: opdev-${OPDEV_VERSION}-aarch64-pc-windows-msvc.zip
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-aarch64-pc-windows-msvc.zip
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-aarch64-pc-windows-msvc.zip
+        - name: opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz
+        - name: opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz
+        - name: opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz
+        - name: opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz
+        - name: opdev-plugin-${OPDEV_VERSION}.tar.gz
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-plugin-${OPDEV_VERSION}.tar.gz
+          direct_asset_path: /downloads/opdev-plugin-${OPDEV_VERSION}.tar.gz
+        - name: opdev-${OPDEV_VERSION}-x86_64-pc-windows-msvc.zip.sigstore.json
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-x86_64-pc-windows-msvc.zip.sigstore.json
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-x86_64-pc-windows-msvc.zip.sigstore.json
+        - name: opdev-${OPDEV_VERSION}-aarch64-pc-windows-msvc.zip.sigstore.json
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-aarch64-pc-windows-msvc.zip.sigstore.json
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-aarch64-pc-windows-msvc.zip.sigstore.json
+        - name: opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz.sigstore.json
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz.sigstore.json
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz.sigstore.json
+        - name: opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz.sigstore.json
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz.sigstore.json
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-aarch64-unknown-linux-gnu.tar.gz.sigstore.json
+        - name: opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz.sigstore.json
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz.sigstore.json
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-x86_64-apple-darwin.tar.gz.sigstore.json
+        - name: opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz.sigstore.json
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz.sigstore.json
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}-aarch64-apple-darwin.tar.gz.sigstore.json
+        - name: opdev-plugin-${OPDEV_VERSION}.tar.gz.sigstore.json
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-plugin-${OPDEV_VERSION}.tar.gz.sigstore.json
+          direct_asset_path: /downloads/opdev-plugin-${OPDEV_VERSION}.tar.gz.sigstore.json
+        - name: opdev-${OPDEV_VERSION}.cdx.json
+          url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-${OPDEV_VERSION}.cdx.json
+          direct_asset_path: /downloads/opdev-${OPDEV_VERSION}.cdx.json
         - name: SHA256SUMS
           url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/SHA256SUMS
           direct_asset_path: /downloads/SHA256SUMS
@@ -135,4 +345,4 @@ create-gitlab-release:
           url: $CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/opdev/$CI_COMMIT_TAG/opdev-provenance.intoto.json
           direct_asset_path: /downloads/opdev-provenance.intoto.json
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/'

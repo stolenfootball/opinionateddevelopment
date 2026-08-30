@@ -1,5 +1,13 @@
 # Release evidence
 
+`opdev release package` creates deterministic `.tar.gz` and `.zip` archives
+from explicit source-to-destination mappings. Inputs are sorted, archive
+timestamps and owner identities are normalized, permissions are fixed, and
+existing outputs are never replaced. Symlinks, path traversal, duplicate
+destinations, and unsupported input types are rejected. Release CI builds each
+binary once and uses this command to package those exact bytes; a second package
+operation must produce an identical archive before qualification continues.
+
 OpDev release evidence binds already-built artifacts to four facts:
 
 1. each artifact's SHA-256 digest;
@@ -25,7 +33,7 @@ do not establish a SLSA Build level, trusted-builder isolation, provenance
 authenticity, secure distribution, or successful consumer verification.
 
 Canonical GitLab tag pipelines add a separate keyless Sigstore bundle for each
-native archive. The signing job receives a short-lived GitLab OIDC token with
+native and plugin archive. The signing job receives a short-lived GitLab OIDC token with
 the `sigstore` audience, records the signing identity through Fulcio/Rekor, and
 verifies the bundle against the exact GitLab project, `.gitlab-ci.yml`, and tag
 identity before publication. This authenticates the archive at release time;
@@ -45,6 +53,20 @@ multiple platform artifacts, the release evidence must retain the limitation
 that it is a superset inventory rather than an exact per-artifact dependency
 graph.
 
+The canonical release matrix builds and smoke-tests six targets in native or
+production-like runner environments:
+
+- Windows MSVC on x86-64, with ARM64 cross-built using Microsoft's ARM64 tools
+  and its PE machine type verified;
+- Linux GNU on native x86-64 and ARM64 runners; and
+- macOS on Apple Silicon, with both ARM64 and x86-64 binaries exercised (the
+  latter under Rosetta).
+
+The plugin distribution is packaged independently of the native CLI archives
+and validated for both Codex and Claude Code. A target is supported only when
+its archive, checksum, signature bundle, SBOM association, manifest, and
+provenance are published together by the canonical tag pipeline.
+
 The release sequence is:
 
 ```text
@@ -55,6 +77,13 @@ build immutable artifact
   -> publish artifact + signature + SBOM + checksums + manifest + provenance together
   -> verify digests after download
 ```
+
+Release-candidate and final tags use the same immutable pipeline. Recovery for
+the stateless CLI and plugin is a safe roll-forward: repair the source on trunk,
+repeat the complete qualification matrix, and publish a new SemVer tag. Existing
+release assets are never replaced. Consumers can continue using a prior exact
+version until the forward fix qualifies. The operational procedure and
+verification commands are defined in `release/README.md`.
 
 Generation alone does not pass `OPDEV-SUPPLY-002`. The delivery gate also needs
 evidence that the bundle was published with the artifact and that the chosen

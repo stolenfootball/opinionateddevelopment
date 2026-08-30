@@ -31,7 +31,7 @@ project:
         summary: GitHub change CI declares read-only contents permission and uses full-SHA pinned actions.
         location: .github/workflows/opdev.yml
 changes:
-  - fingerprint: 70f333e37b02d5e15273472a8f29ef41953d06bd25921bc04947f7c9219d2d4b
+  - fingerprint: e7f1531771950b05b89205735ac4a5ec2d968c17e67f515a3b7ffb0c5c845304
     work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
     assertions:
       - rule_id: OPDEV-WORK-001
@@ -93,7 +93,7 @@ changes:
             summary: Phase 10 acceptance is represented by multi-ecosystem fixtures, self-checks, native matrix configuration, signing, SBOM, provenance, and documentation.
             location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
           - kind: test
-            summary: Canonical format, Clippy, test, release-build, GitLab lint, and plugin validation commands all complete successfully.
+            summary: Canonical format, Clippy, test, release-build, deterministic package smoke, GitLab lint, and both plugin validation commands all complete successfully.
             location: .opdev/project.yaml
       - rule_id: OPDEV-AI-001
         outcome: passed

@@ -15,7 +15,10 @@ use opdev_project::{
     CiProvider, CoverageMode, DeliveryStatus, FileChange, MANIFEST_PATH, ProjectManifest,
     RecoveryStrategy, discover, reconcile_agent_files, staged_fingerprint,
 };
-use opdev_release::{EvidenceRequest, generate_evidence};
+use opdev_release::{
+    EvidenceRequest, PackageFormat, PackageInput, PackageRequest, generate_evidence,
+    package_release,
+};
 use opdev_remote::{RemoteAudit, RemoteCapability, audit};
 
 #[derive(Debug, Parser)]
@@ -43,7 +46,7 @@ enum Command {
     Rules(RulesArgs),
     /// Inspect exact-version assurance profiles bundled with this release.
     Profiles(ProfilesArgs),
-    /// Generate deterministic evidence for already-built release artifacts.
+    /// Package already-built artifacts and generate deterministic release evidence.
     Release(ReleaseArgs),
     /// Prepare repository-state binding for reviewable project evidence.
     Evidence(EvidenceArgs),
@@ -178,8 +181,41 @@ struct ReleaseArgs {
 
 #[derive(Debug, Subcommand)]
 enum ReleaseCommand {
+    /// Create a deterministic archive from explicit source-to-destination mappings.
+    Package(ReleasePackageArgs),
     /// Bind artifacts, source, and an existing `CycloneDX` SBOM by digest.
     Evidence(ReleaseEvidenceArgs),
+}
+
+#[derive(Debug, Args)]
+struct ReleasePackageArgs {
+    /// Archive encoding.
+    #[arg(long, value_enum)]
+    format: PackageFormatArg,
+    /// Regular file or directory mapping in the form SOURCE=DESTINATION; repeat as needed.
+    #[arg(long, value_name = "SOURCE=DESTINATION")]
+    entry: Vec<String>,
+    /// Executable file mapping in the form SOURCE=DESTINATION; repeat as needed.
+    #[arg(long, value_name = "SOURCE=DESTINATION")]
+    executable_entry: Vec<String>,
+    /// New archive path. Existing output is never replaced.
+    #[arg(long)]
+    output: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum PackageFormatArg {
+    TarGz,
+    Zip,
+}
+
+impl From<PackageFormatArg> for PackageFormat {
+    fn from(value: PackageFormatArg) -> Self {
+        match value {
+            PackageFormatArg::TarGz => Self::TarGz,
+            PackageFormatArg::Zip => Self::Zip,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -202,6 +238,9 @@ struct ReleaseEvidenceArgs {
     /// Builder identity URI supplied by the build platform.
     #[arg(long)]
     builder_id: String,
+    /// Honest scope or assurance limitation for this artifact and SBOM association.
+    #[arg(long)]
+    assurance_limitation: Option<String>,
     /// Directory in which evidence files are created without replacement.
     #[arg(long)]
     output: PathBuf,
@@ -270,6 +309,25 @@ fn evidence_command(args: &EvidenceArgs) -> Result<()> {
 
 fn release_command(args: &ReleaseArgs) -> Result<()> {
     match &args.command {
+        ReleaseCommand::Package(args) => {
+            let mut inputs = args
+                .entry
+                .iter()
+                .map(|entry| parse_package_input(entry, false))
+                .collect::<Result<Vec<_>>>()?;
+            inputs.extend(
+                args.executable_entry
+                    .iter()
+                    .map(|entry| parse_package_input(entry, true))
+                    .collect::<Result<Vec<_>>>()?,
+            );
+            package_release(&PackageRequest {
+                inputs,
+                format: args.format.into(),
+                output: args.output.clone(),
+            })?;
+            println!("created {}", args.output.display());
+        }
         ReleaseCommand::Evidence(args) => {
             let outputs = generate_evidence(&EvidenceRequest {
                 artifacts: args.artifact.clone(),
@@ -278,6 +336,7 @@ fn release_command(args: &ReleaseArgs) -> Result<()> {
                 source_uri: args.source_uri.clone(),
                 source_revision: args.source_revision.clone(),
                 builder_id: args.builder_id.clone(),
+                assurance_limitation: args.assurance_limitation.clone(),
                 output_directory: args.output.clone(),
             })?;
             println!("created {}", outputs.checksums.display());
@@ -289,6 +348,18 @@ fn release_command(args: &ReleaseArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn parse_package_input(value: &str, executable: bool) -> Result<PackageInput> {
+    let (source, destination) = value
+        .split_once('=')
+        .filter(|(source, destination)| !source.is_empty() && !destination.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("package entry `{value}` must use SOURCE=DESTINATION"))?;
+    Ok(PackageInput {
+        source: PathBuf::from(source),
+        destination: destination.to_owned(),
+        executable,
+    })
 }
 
 fn show_profiles(args: ProfilesArgs) -> Result<()> {
@@ -698,6 +769,19 @@ mod tests {
             vec![
                 "opdev",
                 "release",
+                "package",
+                "--format",
+                "tar-gz",
+                "--executable-entry",
+                "target/release/opdev=opdev",
+                "--entry",
+                "LICENSE=LICENSE",
+                "--output",
+                "opdev.tar.gz",
+            ],
+            vec![
+                "opdev",
+                "release",
                 "evidence",
                 "--artifact",
                 "opdev.tar.gz",
@@ -715,5 +799,24 @@ mod tests {
         ] {
             assert!(Cli::try_parse_from(arguments).is_ok());
         }
+    }
+
+    #[test]
+    fn cli_and_plugin_versions_stay_in_sync() -> Result<()> {
+        let expected = env!("CARGO_PKG_VERSION");
+        let claude_marketplace: serde_json::Value =
+            serde_json::from_str(include_str!("../../../.claude-plugin/marketplace.json"))?;
+        let claude_plugin: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../plugins/opdev/.claude-plugin/plugin.json"
+        ))?;
+        let codex_plugin: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../plugins/opdev/.codex-plugin/plugin.json"
+        ))?;
+
+        assert_eq!(claude_marketplace["version"], expected);
+        assert_eq!(claude_marketplace["plugins"][0]["version"], expected);
+        assert_eq!(claude_plugin["version"], expected);
+        assert_eq!(codex_plugin["version"], expected);
+        Ok(())
     }
 }

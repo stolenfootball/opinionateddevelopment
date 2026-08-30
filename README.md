@@ -8,10 +8,9 @@ frameworks, repository layout, work tracking, and design-document location
 project-specific while enforcing the delivery rules from
 [MinimumCD](https://minimumcd.org/) and strict, fail-closed evidence semantics.
 
-**Project status:** OpDev `0.1.0` is pre-release. The source-built CLI and agent
-plugin are usable for evaluation, but no native release archives have been
-published and the public compatibility boundary is not yet stable. Rule IDs and
-schemas are versioned so changes can be reviewed explicitly.
+**Project status:** OpDev `0.1.0` is the initial release line. Its public
+compatibility boundary is pre-1.0, while rule IDs, schemas, and assurance
+profiles are independently versioned so changes remain explicit and reviewable.
 
 ## Why OpDev
 
@@ -63,8 +62,33 @@ without interruption; an uninitialized software project prompts before running
 
 ### 1. Install the CLI
 
-Until native archives are published, install from source with Rust 1.97 or
-newer:
+Download the archive for your system from the
+[v0.1.0 release](https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0),
+verify it as described in [`release/README.md`](release/README.md), and place the
+`opdev` executable on `PATH`.
+
+Linux x86-64 example:
+
+```sh
+curl --fail --location --output opdev.tar.gz \
+  https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0/downloads/opdev-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf opdev.tar.gz
+install -m 0755 opdev "$HOME/.local/bin/opdev"
+opdev version
+```
+
+Windows x86-64 example:
+
+```powershell
+Invoke-WebRequest `
+  https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0/downloads/opdev-0.1.0-x86_64-pc-windows-msvc.zip `
+  -OutFile opdev.zip
+Expand-Archive opdev.zip -DestinationPath opdev
+.\opdev\opdev.exe version
+```
+
+Archives are published for Windows, Linux GNU, and macOS on both x86-64 and
+ARM64. Rust 1.97 or newer provides a source-install fallback:
 
 ```sh
 cargo install --locked --git https://gitlab.com/stolenfootball-tools/opinionateddevelopment.git opdev-cli
@@ -232,7 +256,7 @@ allowlist of software OpDev can govern.
 | `opdev evidence` | Fingerprint staged repository state for reviewed change evidence. |
 | `opdev rules` | Inspect the embedded normative rule catalog. |
 | `opdev profiles` | Inspect bundled exact-version assurance profiles. |
-| `opdev release` | Generate deterministic evidence for already-built artifacts. |
+| `opdev release` | Deterministically package already-built artifacts and bind them to checksums, an SBOM, source, and provenance. |
 | `opdev upgrade` | Explicitly upgrade project-owned OpDev files. |
 
 Use `opdev <command> --help` for the complete command surface. JSON reports are

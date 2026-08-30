@@ -26,5 +26,5 @@ identity_pattern = "https://gitlab.com/stolenfootball-tools/opinionateddevelopme
 [claims]
 slsa_build_level = false
 trusted_builder = false
-signed_evidence = true
-note = "Canonical tag releases sign the native archive with GitLab OIDC and Sigstore; local evidence generation remains unsigned until a release pipeline signs it."
+signed_evidence = false
+note = "Canonical tag releases sign every native and plugin archive with GitLab OIDC and Sigstore. Checksums, the SBOM, manifest, and provenance are digest-bound but are not separately signed, so OpDev makes no signed-evidence or SLSA Build-level claim."
