@@ -1,0 +1,28 @@
+stages:
+  - verify
+
+variables:
+  OPDEV_VERSION: {{VERSION_JSON}}
+
+opdev:
+  stage: verify
+  image: alpine:3.23.5
+  before_script:
+    - set -eu -o pipefail
+    - apk add --no-cache ca-certificates curl tar
+    - base="https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v${OPDEV_VERSION}/downloads"
+    - archive="opdev-x86_64-unknown-linux-gnu.tar.gz"
+    - curl --fail --silent --show-error --location --output "$archive" "$base/$archive"
+    - curl --fail --silent --show-error --location --output SHA256SUMS "$base/SHA256SUMS"
+    - grep "  $archive$" SHA256SUMS | sha256sum -c -
+    - tar -xzf "$archive"
+    - install -m 0755 opdev /usr/local/bin/opdev
+  script:
+    - opdev check --ci --format json > opdev-report.json
+  artifacts:
+    when: always
+    paths:
+      - opdev-report.json
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

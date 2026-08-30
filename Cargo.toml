@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/opdev-cli",
+    "crates/opdev-ci",
     "crates/opdev-core",
     "crates/opdev-engine",
     "crates/opdev-project",

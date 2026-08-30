@@ -109,6 +109,18 @@ pub fn evaluate(
     })
 }
 
+/// Recomputes strict gate verdicts after another verifier contributes rule
+/// evidence, such as a local CI or remote-provider adapter.
+///
+/// # Errors
+///
+/// Returns [`EvaluationError`] when the embedded catalog cannot be loaded.
+pub fn reaggregate(report: &mut CheckReport) -> Result<(), EvaluationError> {
+    let catalog = embedded_catalog()?;
+    report.gates = aggregate_gates(&catalog, &report.rules, &report.checks);
+    Ok(())
+}
+
 fn evaluate_rule(
     rule: &Rule,
     manifest: &ProjectManifest,

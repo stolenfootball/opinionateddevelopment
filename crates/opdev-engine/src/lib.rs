@@ -7,5 +7,5 @@ mod evaluator;
 mod report;
 
 pub use command::{CommandError, Execution, execute};
-pub use evaluator::{CheckOptions, EvaluationError, evaluate};
+pub use evaluator::{CheckOptions, EvaluationError, evaluate, reaggregate};
 pub use report::{CheckKind, CheckReport, CheckResult};

@@ -5,11 +5,12 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use opdev_ci::{Capability, TemplateContext, adapter_for, write_new};
 use opdev_core::{
     AggregateVerdict, EXTENSION_PROTOCOL_VERSION, Gate, Outcome, PROJECT_SCHEMA_VERSION, RuleId,
     embedded_catalog,
 };
-use opdev_engine::{CheckOptions, CheckReport, evaluate};
+use opdev_engine::{CheckOptions, CheckReport, evaluate, reaggregate};
 use opdev_project::{
     CiProvider, CoverageMode, DeliveryStatus, FileChange, MANIFEST_PATH, ProjectManifest,
     RecoveryStrategy, discover, reconcile_agent_files,
@@ -30,6 +31,8 @@ enum Command {
     Check(CheckArgs),
     /// Explain missing, contradictory, or unverified capabilities.
     Doctor(DoctorArgs),
+    /// Generate or inspect a first-class CI configuration.
+    Ci(CiArgs),
     /// Upgrade project-owned `OpDev` files explicitly.
     Upgrade(UpgradeArgs),
     /// Show CLI and protocol versions.
@@ -71,6 +74,58 @@ struct CheckArgs {
 enum OutputFormat {
     Human,
     Json,
+}
+
+#[derive(Debug, Args)]
+struct CiArgs {
+    #[command(subcommand)]
+    command: CiCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum CiCommand {
+    /// Render a pinned baseline configuration.
+    Generate(CiGenerateArgs),
+    /// Inspect the initialized project's local CI configuration.
+    Inspect(CiInspectArgs),
+}
+
+#[derive(Debug, Args)]
+struct CiGenerateArgs {
+    /// Repository directory.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+    /// Provider to render.
+    #[arg(long, value_enum)]
+    provider: ProviderArg,
+    /// Exact `OpDev` release used by CI.
+    #[arg(long, default_value = env!("CARGO_PKG_VERSION"))]
+    opdev_version: String,
+    /// Create the provider file; otherwise print it to standard output.
+    #[arg(long)]
+    write: bool,
+}
+
+#[derive(Debug, Args)]
+struct CiInspectArgs {
+    /// Directory inside the initialized Git repository.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ProviderArg {
+    Github,
+    Gitlab,
+}
+
+impl From<ProviderArg> for CiProvider {
+    fn from(value: ProviderArg) -> Self {
+        match value {
+            ProviderArg::Github => Self::Github,
+            ProviderArg::Gitlab => Self::Gitlab,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -121,6 +176,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Init(args) => initialize(&args).map(|()| ExitCode::SUCCESS),
         Command::Check(args) => check_project(&args),
         Command::Doctor(args) => doctor(&args).map(|()| ExitCode::SUCCESS),
+        Command::Ci(args) => ci_command(&args).map(|()| ExitCode::SUCCESS),
         Command::Upgrade(args) => upgrade(&args).map(|()| ExitCode::SUCCESS),
     }
 }
@@ -179,6 +235,47 @@ fn report_agent_changes(changes: &[opdev_project::ManagedFile]) {
     }
 }
 
+fn ci_command(args: &CiArgs) -> Result<()> {
+    match &args.command {
+        CiCommand::Generate(args) => generate_ci(args),
+        CiCommand::Inspect(args) => inspect_ci(args),
+    }
+}
+
+fn generate_ci(args: &CiGenerateArgs) -> Result<()> {
+    let discovery = discover(&args.root).context("could not inspect the repository")?;
+    let adapter = adapter_for(args.provider.into())?;
+    let context = TemplateContext {
+        opdev_version: args.opdev_version.clone(),
+        trunk: discovery.manifest.project.trunk,
+    };
+    if args.write {
+        let path = write_new(adapter, &discovery.root, &context)?;
+        println!("created {}", path.display());
+    } else {
+        print!("{}", adapter.render(&context)?);
+    }
+    Ok(())
+}
+
+fn inspect_ci(args: &CiInspectArgs) -> Result<()> {
+    let (root, manifest) = load_project(&args.root)?;
+    let adapter = adapter_for(manifest.project.ci.provider)?;
+    let inspection = adapter.inspect(&root)?;
+    print_capability("configuration", &inspection.configuration);
+    print_capability("pre_merge", &inspection.pre_merge);
+    print_capability("post_merge", &inspection.post_merge);
+    print_capability("integrity", &inspection.integrity);
+    Ok(())
+}
+
+fn print_capability(name: &str, capability: &Capability) {
+    println!("{name}: {:?}", capability.outcome);
+    if let Some(diagnostic) = &capability.diagnostic {
+        println!("  {diagnostic}");
+    }
+}
+
 fn check_project(args: &CheckArgs) -> Result<ExitCode> {
     let (root, manifest) = load_project(&args.root)?;
     let mut options = if args.ci {
@@ -187,7 +284,10 @@ fn check_project(args: &CheckArgs) -> Result<ExitCode> {
         CheckOptions::local()
     };
     options.execute_checks = !args.no_exec;
-    let report = evaluate(&root, &manifest, options).context("project evaluation failed")?;
+    let mut report = evaluate(&root, &manifest, options).context("project evaluation failed")?;
+    if args.ci {
+        apply_local_ci(&root, &manifest, &mut report)?;
+    }
     match args.format {
         OutputFormat::Human => print_human_report(&report),
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
@@ -205,6 +305,51 @@ fn check_project(args: &CheckArgs) -> Result<ExitCode> {
     } else {
         ExitCode::from(1)
     })
+}
+
+fn apply_local_ci(root: &Path, manifest: &ProjectManifest, report: &mut CheckReport) -> Result<()> {
+    let Ok(adapter) = adapter_for(manifest.project.ci.provider) else {
+        let outcome = if manifest.project.ci.provider == CiProvider::Unconfigured {
+            Outcome::MigrationRequired
+        } else {
+            Outcome::Unverified
+        };
+        let capability = Capability {
+            outcome,
+            evidence: Vec::new(),
+            diagnostic: Some(format!(
+                "No first-class local adapter is available for {:?}",
+                manifest.project.ci.provider
+            )),
+        };
+        apply_capability(report, "MCD-CI-001", &capability);
+        apply_capability(report, "MCD-TEST-001", &capability);
+        apply_capability(report, "MCD-TEST-002", &capability);
+        reaggregate(report)?;
+        return Ok(());
+    };
+    let inspection = adapter.inspect(root)?;
+    apply_capability(report, "MCD-CI-001", &inspection.configuration);
+    if inspection.integrity.outcome != Outcome::Passed {
+        apply_capability(report, "MCD-CI-001", &inspection.integrity);
+    }
+    apply_capability(report, "MCD-TEST-001", &inspection.pre_merge);
+    apply_capability(report, "MCD-TEST-002", &inspection.post_merge);
+    reaggregate(report)?;
+    Ok(())
+}
+
+fn apply_capability(report: &mut CheckReport, rule_id: &str, capability: &Capability) {
+    if let Some(result) = report
+        .rules
+        .iter_mut()
+        .find(|result| result.rule_id.as_str() == rule_id)
+    {
+        result.outcome = capability.outcome;
+        result.verifier = opdev_core::VerificationSource::Ci;
+        result.evidence.clone_from(&capability.evidence);
+        result.diagnostic.clone_from(&capability.diagnostic);
+    }
 }
 
 fn print_human_report(report: &CheckReport) {
@@ -345,6 +490,8 @@ mod tests {
             vec!["opdev", "check", "--ci", "--remote"],
             vec!["opdev", "check", "--no-exec", "--format", "json"],
             vec!["opdev", "doctor", "--remote"],
+            vec!["opdev", "ci", "generate", "--provider", "gitlab"],
+            vec!["opdev", "ci", "inspect"],
             vec!["opdev", "upgrade"],
             vec!["opdev", "version"],
             vec!["opdev", "rules", "--id", "MCD-TRUNK-001"],
