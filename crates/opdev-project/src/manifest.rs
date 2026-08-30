@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use opdev_core::PROJECT_SCHEMA_VERSION;
+use opdev_core::{PROJECT_SCHEMA_VERSION, resolve_profile};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -245,6 +245,10 @@ impl ProjectManifest {
                 .map(|profile| profile.name.as_str()),
             "assurance profile",
         )?;
+        for profile in &self.assurance.profiles {
+            resolve_profile(&profile.name, &profile.version, profile.level.as_deref())
+                .map_err(|error| ManifestError::Semantic(error.to_string()))?;
+        }
 
         Ok(())
     }
@@ -880,6 +884,16 @@ mod tests {
         assert!(matches!(
             manifest.to_yaml(),
             Err(ManifestError::Semantic(message)) if message.contains("stay within")
+        ));
+    }
+
+    #[test]
+    fn unknown_assurance_profile_versions_are_rejected() {
+        let mut manifest = minimal_manifest();
+        manifest.assurance.profiles[0].version = "latest".into();
+        assert!(matches!(
+            manifest.to_yaml(),
+            Err(ManifestError::Semantic(message)) if message.contains("not supported")
         ));
     }
 }

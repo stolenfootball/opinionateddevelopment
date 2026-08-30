@@ -1,0 +1,32 @@
+schema: 1
+name: openssf-osps-baseline-derived
+version: "2026.02.19"
+title: Informative OpDev mapping to the OpenSSF OSPS Baseline
+status: derived_mapping
+claim: This mapping identifies OpDev evidence relevant to the date-versioned OSPS Baseline; it is incomplete and is not an OpenSSF compliance declaration.
+source:
+  name: Open Source Project Security Baseline
+  version: "2026.02.19"
+  url: https://baseline.openssf.org/versions/2026-02-19
+levels: ["1", "2", "3"]
+requirements:
+  - id: access-control
+    title: Repository access, review, and protected branch controls
+    coverage: partial
+    mapped_rules: [MCD-TRUNK-001, MCD-TRUNK-002, OPDEV-SUPPLY-001]
+    limitation: Identity lifecycle, MFA, and administrative access require provider- and organization-level evidence.
+  - id: build-and-release
+    title: Automated builds, release integrity, and provenance
+    coverage: partial
+    mapped_rules: [MCD-CI-001, MCD-PIPELINE-001, MCD-ARTIFACT-001, MCD-ARTIFACT-002, OPDEV-SUPPLY-002]
+    limitation: OpDev does not itself establish signing-key protection or trusted-builder isolation.
+  - id: documentation-and-governance
+    title: Security policy, contribution process, and project governance
+    coverage: partial
+    mapped_rules: [OPDEV-AUTH-001, OPDEV-AUTH-002, OPDEV-SEC-002]
+    limitation: Required public documents and response commitments must be assessed directly.
+  - id: security-assessment
+    title: Security testing, dependency management, and vulnerability response
+    coverage: partial
+    mapped_rules: [OPDEV-SEC-001, OPDEV-SEC-002, OPDEV-TEST-002, OPDEV-TEST-006, OPDEV-SUPPLY-002]
+    limitation: Project-specific security tools and vulnerability response service levels are not supplied by the baseline engine.

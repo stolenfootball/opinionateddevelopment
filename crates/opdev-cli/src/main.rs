@@ -8,13 +8,14 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use opdev_ci::{Capability, TemplateContext, adapter_for, write_new};
 use opdev_core::{
     AggregateVerdict, EXTENSION_PROTOCOL_VERSION, Gate, Outcome, PROJECT_SCHEMA_VERSION, RuleId,
-    embedded_catalog,
+    embedded_catalog, embedded_profiles, resolve_profile,
 };
 use opdev_engine::{CheckOptions, CheckReport, evaluate, reaggregate};
 use opdev_project::{
     CiProvider, CoverageMode, DeliveryStatus, FileChange, MANIFEST_PATH, ProjectManifest,
     RecoveryStrategy, discover, reconcile_agent_files,
 };
+use opdev_release::{EvidenceRequest, generate_evidence};
 use opdev_remote::{RemoteAudit, RemoteCapability, audit};
 
 #[derive(Debug, Parser)]
@@ -40,6 +41,10 @@ enum Command {
     Version,
     /// Inspect the embedded normative rule catalog.
     Rules(RulesArgs),
+    /// Inspect exact-version assurance profiles bundled with this release.
+    Profiles(ProfilesArgs),
+    /// Generate deterministic evidence for already-built release artifacts.
+    Release(ReleaseArgs),
 }
 
 #[derive(Debug, Args)]
@@ -153,6 +158,53 @@ struct RulesArgs {
     id: Option<RuleId>,
 }
 
+#[derive(Debug, Args)]
+struct ProfilesArgs {
+    /// Show one stable profile name instead of listing bundled profiles.
+    #[arg(long, requires = "version")]
+    name: Option<String>,
+    /// Exact profile version; floating aliases such as `latest` are rejected.
+    #[arg(long, requires = "name")]
+    version: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct ReleaseArgs {
+    #[command(subcommand)]
+    command: ReleaseCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ReleaseCommand {
+    /// Bind artifacts, source, and an existing `CycloneDX` SBOM by digest.
+    Evidence(ReleaseEvidenceArgs),
+}
+
+#[derive(Debug, Args)]
+struct ReleaseEvidenceArgs {
+    /// Release artifact; repeat for every artifact in this evidence bundle.
+    #[arg(long, required = true)]
+    artifact: Vec<PathBuf>,
+    /// Existing `CycloneDX` JSON SBOM.
+    #[arg(long)]
+    sbom: PathBuf,
+    /// Exact `CycloneDX` specification version required from the SBOM.
+    #[arg(long, default_value = "1.5")]
+    sbom_version: String,
+    /// Stable source repository URI.
+    #[arg(long)]
+    source_uri: String,
+    /// Exact source revision, normally the Git commit SHA.
+    #[arg(long)]
+    source_revision: String,
+    /// Builder identity URI supplied by the build platform.
+    #[arg(long)]
+    builder_id: String,
+    /// Directory in which evidence files are created without replacement.
+    #[arg(long)]
+    output: PathBuf,
+}
+
 fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(exit_code) => exit_code,
@@ -174,12 +226,52 @@ fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Rules(args) => show_rules(args).map(|()| ExitCode::SUCCESS),
+        Command::Profiles(args) => show_profiles(args).map(|()| ExitCode::SUCCESS),
+        Command::Release(args) => release_command(&args).map(|()| ExitCode::SUCCESS),
         Command::Init(args) => initialize(&args).map(|()| ExitCode::SUCCESS),
         Command::Check(args) => check_project(&args),
         Command::Doctor(args) => doctor(&args).map(|()| ExitCode::SUCCESS),
         Command::Ci(args) => ci_command(&args).map(|()| ExitCode::SUCCESS),
         Command::Upgrade(args) => upgrade(&args).map(|()| ExitCode::SUCCESS),
     }
+}
+
+fn release_command(args: &ReleaseArgs) -> Result<()> {
+    match &args.command {
+        ReleaseCommand::Evidence(args) => {
+            let outputs = generate_evidence(&EvidenceRequest {
+                artifacts: args.artifact.clone(),
+                sbom: args.sbom.clone(),
+                sbom_version: args.sbom_version.clone(),
+                source_uri: args.source_uri.clone(),
+                source_revision: args.source_revision.clone(),
+                builder_id: args.builder_id.clone(),
+                output_directory: args.output.clone(),
+            })?;
+            println!("created {}", outputs.checksums.display());
+            println!("created {}", outputs.manifest.display());
+            println!("created {}", outputs.provenance.display());
+            println!(
+                "Evidence is digest-bound but does not by itself establish signing, trusted-builder provenance, or a SLSA Build level."
+            );
+        }
+    }
+    Ok(())
+}
+
+fn show_profiles(args: ProfilesArgs) -> Result<()> {
+    if let (Some(name), Some(version)) = (args.name, args.version) {
+        let profile = resolve_profile(&name, &version, None)?;
+        println!("{}", serde_json::to_string_pretty(&profile)?);
+    } else {
+        for profile in embedded_profiles()? {
+            println!(
+                "{}@{}\t{:?}\t{}",
+                profile.name, profile.version, profile.status, profile.title
+            );
+        }
+    }
+    Ok(())
 }
 
 fn initialize(args: &InitArgs) -> Result<()> {

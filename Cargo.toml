@@ -5,6 +5,7 @@ members = [
     "crates/opdev-core",
     "crates/opdev-engine",
     "crates/opdev-project",
+    "crates/opdev-release",
     "crates/opdev-remote",
 ]
 resolver = "3"
@@ -26,6 +27,7 @@ rustls = { version = "0.23.43", default-features = false, features = ["ring", "s
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 serde-saphyr = "1.1.0"
+sha2 = "0.10.9"
 thiserror = "2.0.20"
 tempfile = "3.27.0"
 url = "2.5.8"

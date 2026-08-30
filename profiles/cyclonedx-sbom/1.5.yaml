@@ -1,0 +1,21 @@
+schema: 1
+name: cyclonedx-sbom
+version: "1.5"
+title: CycloneDX 1.5 SBOM release evidence
+status: evidence_format
+claim: This profile records CycloneDX 1.5 SBOM generation and association with release digests; an SBOM is inventory evidence, not dependency approval, vulnerability absence, or current CycloneDX 1.7 conformance.
+source:
+  name: CycloneDX Specification
+  version: "1.5"
+  url: https://cyclonedx.org/docs/1.5/json/
+requirements:
+  - id: inventory
+    title: Generate a machine-readable component and dependency inventory
+    coverage: partial
+    mapped_rules: [OPDEV-SUPPLY-002]
+    limitation: Completeness depends on the ecosystem generator and exact build configuration.
+  - id: artifact-association
+    title: Bind the SBOM digest to release evidence
+    coverage: full
+    mapped_rules: [MCD-ARTIFACT-001, OPDEV-SUPPLY-002]
+    limitation: The association still needs authentic distribution or signing to resist replacement.

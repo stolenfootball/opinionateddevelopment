@@ -1,0 +1,36 @@
+schema: 1
+name: opdev-core
+version: "1"
+title: OpDev core delivery baseline
+status: normative
+claim: Selecting this profile applies the complete OpDev catalog, including every MinimumCD-derived rule; only an evidence-backed gate result can establish satisfaction.
+source:
+  name: OpDev rule catalog
+  version: "1"
+  url: rules/core.yaml
+requirements:
+  - id: authority-and-work
+    title: Authoritative context, explicit work, and design decisions
+    coverage: full
+    mapped_rules: [OPDEV-AUTH-001, OPDEV-AUTH-002, OPDEV-WORK-001, OPDEV-DESIGN-001]
+    limitation: Individual results still require evidence from the evaluated project and change.
+  - id: minimumcd
+    title: MinimumCD continuous-delivery baseline
+    coverage: full
+    mapped_rules: [MCD-CI-001, MCD-TRUNK-001, MCD-TRUNK-002, MCD-TRUNK-003, MCD-TEST-001, MCD-TEST-002, MCD-FLOW-001, MCD-COMPAT-001, MCD-DELIVERY-001, MCD-PIPELINE-001, MCD-ARTIFACT-001, MCD-ARTIFACT-002, MCD-ENV-001, MCD-RECOVERY-001, MCD-CONFIG-001, MCD-CONFIG-002]
+    limitation: MinimumCD remains mandatory and cannot be weakened by another profile or extension.
+  - id: testing-and-evaluation
+    title: Risk-based testing and effectiveness evaluation
+    coverage: full
+    mapped_rules: [OPDEV-TEST-001, OPDEV-TEST-002, OPDEV-TEST-003, OPDEV-TEST-004, OPDEV-TEST-005, OPDEV-TEST-006, OPDEV-TEST-007, OPDEV-EVAL-001]
+    limitation: Applicability and evidence are project-specific even though the requirements are normative.
+  - id: security-supply-and-operations
+    title: Security, supply-chain, accessibility, operations, and learning
+    coverage: full
+    mapped_rules: [OPDEV-SEC-001, OPDEV-SEC-002, OPDEV-SUPPLY-001, OPDEV-SUPPLY-002, OPDEV-A11Y-001, OPDEV-OPS-001, OPDEV-AI-001, OPDEV-LEARN-001]
+    limitation: A mapped rule may be not applicable only with an evidence-backed applicability determination.
+  - id: extensions
+    title: Extensions preserve core semantics
+    coverage: full
+    mapped_rules: [OPDEV-EXT-001]
+    limitation: Extensions can add evidence and stricter checks but cannot replace or weaken core results.

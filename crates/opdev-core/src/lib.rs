@@ -2,10 +2,15 @@
 
 #![forbid(unsafe_code)]
 
+mod assurance;
 mod catalog;
 mod evidence;
 mod outcome;
 
+pub use assurance::{
+    AssuranceProfile, ProfileError, ProfileRequirement, ProfileSource, ProfileStatus,
+    RequirementCoverage, embedded_profiles, resolve_profile,
+};
 pub use catalog::{
     CatalogError, Gate, Rule, RuleCatalog, RuleId, RuleKind, Source, VerificationMethod,
     embedded_catalog,

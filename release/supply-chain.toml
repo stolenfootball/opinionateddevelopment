@@ -1,0 +1,24 @@
+schema = 1
+
+[sbom]
+format = "cyclonedx-json"
+specification_version = "1.5"
+generator = "cargo-cyclonedx"
+generator_version = "0.5.9"
+install = ["cargo", "install", "--locked", "cargo-cyclonedx", "--version", "0.5.9"]
+
+[provenance]
+statement = "in-toto-v1"
+predicate_type = "https://slsa.dev/provenance/v1"
+slsa_specification_version = "1.2"
+build_type = "https://opdev.dev/buildtypes/release/v1"
+
+[integrity]
+algorithm = "sha256"
+checksums_file = "SHA256SUMS"
+
+[claims]
+slsa_build_level = false
+trusted_builder = false
+signed_evidence = false
+note = "The initial evidence bundle is digest-bound and SLSA-compatible, but trust and signing depend on the release platform and are not inferred."
