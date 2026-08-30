@@ -4,8 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
-use clap::{Args, Parser, Subcommand};
-use opdev_core::{EXTENSION_PROTOCOL_VERSION, PROJECT_SCHEMA_VERSION, RuleId, embedded_catalog};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use opdev_core::{
+    AggregateVerdict, EXTENSION_PROTOCOL_VERSION, Gate, Outcome, PROJECT_SCHEMA_VERSION, RuleId,
+    embedded_catalog,
+};
+use opdev_engine::{CheckOptions, CheckReport, evaluate};
 use opdev_project::{
     CiProvider, CoverageMode, DeliveryStatus, FileChange, MANIFEST_PATH, ProjectManifest,
     RecoveryStrategy, discover, reconcile_agent_files,
@@ -55,6 +59,18 @@ struct CheckArgs {
     /// Include read-only remote provider auditing.
     #[arg(long)]
     remote: bool,
+    /// Validate and aggregate without executing project commands.
+    #[arg(long)]
+    no_exec: bool,
+    /// Report presentation.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum OutputFormat {
+    Human,
+    Json,
 }
 
 #[derive(Debug, Args)]
@@ -83,7 +99,7 @@ struct RulesArgs {
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(exit_code) => exit_code,
         Err(error) => {
             eprintln!("error: {error:#}");
             ExitCode::from(2)
@@ -91,7 +107,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<()> {
+fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Version => {
             let catalog = embedded_catalog().context("could not load the embedded rule catalog")?;
@@ -99,13 +115,13 @@ fn run(cli: Cli) -> Result<()> {
             println!("project schema {PROJECT_SCHEMA_VERSION}");
             println!("rule catalog {}", catalog.catalog_version);
             println!("extension protocol {EXTENSION_PROTOCOL_VERSION}");
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
-        Command::Rules(args) => show_rules(args),
-        Command::Init(args) => initialize(&args),
+        Command::Rules(args) => show_rules(args).map(|()| ExitCode::SUCCESS),
+        Command::Init(args) => initialize(&args).map(|()| ExitCode::SUCCESS),
         Command::Check(args) => check_project(&args),
-        Command::Doctor(args) => doctor(&args),
-        Command::Upgrade(args) => upgrade(&args),
+        Command::Doctor(args) => doctor(&args).map(|()| ExitCode::SUCCESS),
+        Command::Upgrade(args) => upgrade(&args).map(|()| ExitCode::SUCCESS),
     }
 }
 
@@ -163,22 +179,89 @@ fn report_agent_changes(changes: &[opdev_project::ManagedFile]) {
     }
 }
 
-fn check_project(args: &CheckArgs) -> Result<()> {
+fn check_project(args: &CheckArgs) -> Result<ExitCode> {
     let (root, manifest) = load_project(&args.root)?;
-    println!(
-        "passed project contract {}",
-        root.join(MANIFEST_PATH).display()
-    );
-    if args.ci {
-        eprintln!("note: CI execution checks are added in Phase 6; the contract itself is valid");
+    let mut options = if args.ci {
+        CheckOptions::pre_merge()
+    } else {
+        CheckOptions::local()
+    };
+    options.execute_checks = !args.no_exec;
+    let report = evaluate(&root, &manifest, options).context("project evaluation failed")?;
+    match args.format {
+        OutputFormat::Human => print_human_report(&report),
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
     }
     if args.remote {
         eprintln!("note: read-only remote auditing is added in Phase 7; no remote was queried");
     }
-    if manifest.delivery.status == DeliveryStatus::MigrationRequired {
-        eprintln!("migration_required: delivery is not yet qualified");
+    let gate = if args.ci {
+        Gate::Integration
+    } else {
+        Gate::Development
+    };
+    Ok(if report.gate_passed(gate) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
+}
+
+fn print_human_report(report: &CheckReport) {
+    println!("OpDev report for {}", report.subject);
+    for check in &report.checks {
+        println!(
+            "check {}: {:?} — {}",
+            check.id, check.outcome, check.summary
+        );
+        if let Some(stderr) = &check.stderr {
+            for line in stderr.lines().take(8) {
+                println!("  {line}");
+            }
+        }
     }
-    Ok(())
+    let mut counts = [0_u32; 6];
+    for result in &report.rules {
+        counts[outcome_index(result.outcome)] += 1;
+    }
+    println!(
+        "rules: {} passed, {} failed, {} unverified, {} not_applicable, {} error, {} migration_required",
+        counts[0], counts[1], counts[2], counts[3], counts[4], counts[5]
+    );
+    for gate in &report.gates {
+        println!(
+            "gate {:?}: {:?} ({} rules, {} checks blocking)",
+            gate.gate,
+            gate.verdict,
+            gate.blocking_rules.len(),
+            gate.blocking_checks.len()
+        );
+        if gate.verdict == AggregateVerdict::Blocked {
+            let rules = gate
+                .blocking_rules
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            if !rules.is_empty() {
+                println!("  rules: {rules}");
+            }
+            if !gate.blocking_checks.is_empty() {
+                println!("  checks: {}", gate.blocking_checks.join(", "));
+            }
+        }
+    }
+}
+
+const fn outcome_index(outcome: Outcome) -> usize {
+    match outcome {
+        Outcome::Passed => 0,
+        Outcome::Failed => 1,
+        Outcome::Unverified => 2,
+        Outcome::NotApplicable => 3,
+        Outcome::Error => 4,
+        Outcome::MigrationRequired => 5,
+    }
 }
 
 fn doctor(args: &DoctorArgs) -> Result<()> {
@@ -260,6 +343,7 @@ mod tests {
             vec!["opdev", "init"],
             vec!["opdev", "init", "--root", ".", "--dry-run"],
             vec!["opdev", "check", "--ci", "--remote"],
+            vec!["opdev", "check", "--no-exec", "--format", "json"],
             vec!["opdev", "doctor", "--remote"],
             vec!["opdev", "upgrade"],
             vec!["opdev", "version"],

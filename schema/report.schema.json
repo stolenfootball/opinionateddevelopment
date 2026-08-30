@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opdev.dev/schema/report-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "catalog_version", "subject", "evaluated_at", "rules", "checks", "gates"],
+  "properties": {
+    "schema": { "const": 1 },
+    "catalog_version": { "type": "integer", "minimum": 1 },
+    "subject": { "type": "string", "minLength": 1 },
+    "evaluated_at": { "type": "integer", "minimum": 0 },
+    "rules": { "type": "array", "items": { "$ref": "#/$defs/rule_result" } },
+    "checks": { "type": "array", "items": { "$ref": "#/$defs/check_result" } },
+    "gates": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/gate_result" }
+    }
+  },
+  "$defs": {
+    "outcome": {
+      "enum": ["passed", "failed", "unverified", "not_applicable", "error", "migration_required"]
+    },
+    "gate": { "enum": ["development", "integration", "delivery", "compliance"] },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "summary"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "location": { "type": "string", "minLength": 1 }
+      }
+    },
+    "rule_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "catalog_version", "outcome", "subject", "verifier", "evaluated_at", "evidence"],
+      "properties": {
+        "rule_id": { "type": "string", "pattern": "^[A-Z0-9]+(?:-[A-Z0-9]+)+-[0-9]{3}$" },
+        "catalog_version": { "type": "integer", "minimum": 1 },
+        "outcome": { "$ref": "#/$defs/outcome" },
+        "subject": { "type": "string", "minLength": 1 },
+        "verifier": { "enum": ["catalog", "manifest", "command", "extension", "git", "ci", "remote", "agent"] },
+        "evaluated_at": { "type": "integer", "minimum": 0 },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "diagnostic": { "type": "string", "minLength": 1 }
+      }
+    },
+    "check_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "blocking", "gates", "outcome", "summary", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["suite", "extension"] },
+        "blocking": { "type": "boolean" },
+        "gates": { "type": "array", "items": { "$ref": "#/$defs/gate" }, "uniqueItems": true },
+        "outcome": { "$ref": "#/$defs/outcome" },
+        "summary": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "stdout": { "type": "string" },
+        "stderr": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "gate_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "verdict", "blocking_rules", "blocking_checks"],
+      "properties": {
+        "gate": { "$ref": "#/$defs/gate" },
+        "verdict": { "enum": ["passed", "blocked"] },
+        "blocking_rules": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Z0-9]+(?:-[A-Z0-9]+)+-[0-9]{3}$" },
+          "uniqueItems": true
+        },
+        "blocking_checks": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    }
+  }
+}

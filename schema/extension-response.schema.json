@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opdev.dev/schema/extension-response-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "outcome", "summary"],
+  "properties": {
+    "protocol_version": { "const": "1.0.0" },
+    "outcome": { "enum": ["passed", "failed", "unverified", "not_applicable", "error", "migration_required"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "summary"],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1 },
+          "summary": { "type": "string", "minLength": 1 },
+          "location": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "diagnostic": { "type": "string", "minLength": 1 }
+  }
+}

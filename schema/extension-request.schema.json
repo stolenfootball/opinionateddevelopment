@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opdev.dev/schema/extension-request-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "check_id", "project_root", "stage"],
+  "properties": {
+    "protocol_version": { "const": "1.0.0" },
+    "check_id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+    "project_root": { "type": "string", "minLength": 1 },
+    "stage": { "enum": ["specify", "design", "verify", "pre_merge", "post_merge", "package", "deliver", "smoke", "recover", "evaluate"] }
+  }
+}

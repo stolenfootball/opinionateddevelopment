@@ -3,11 +3,15 @@
 #![forbid(unsafe_code)]
 
 mod catalog;
+mod evidence;
 mod outcome;
 
 pub use catalog::{
     CatalogError, Gate, Rule, RuleCatalog, RuleId, RuleKind, Source, VerificationMethod,
     embedded_catalog,
+};
+pub use evidence::{
+    Evidence, ExtensionRequest, ExtensionResponse, GateVerdict, RuleResult, VerificationSource,
 };
 pub use outcome::{AggregateVerdict, Outcome};
 

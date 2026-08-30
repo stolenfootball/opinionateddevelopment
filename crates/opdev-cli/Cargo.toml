@@ -15,7 +15,9 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 opdev-core = { path = "../opdev-core" }
+opdev-engine = { path = "../opdev-engine" }
 opdev-project = { path = "../opdev-project" }
+serde_json.workspace = true
 
 [lints]
 workspace = true
