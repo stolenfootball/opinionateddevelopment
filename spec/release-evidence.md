@@ -32,8 +32,11 @@ is a claim from the caller, not proof of builder identity. The files therefore
 do not establish a SLSA Build level, trusted-builder isolation, provenance
 authenticity, secure distribution, or successful consumer verification.
 
-Canonical GitLab tag pipelines add a separate keyless Sigstore bundle for each
-native and plugin archive. The signing job receives a short-lived GitLab OIDC token with
+The protected GitLab tag pipeline is the sole publisher. It dispatches native
+builders on GitHub Actions for an exact mirrored source revision, retrieves the
+resulting internal workflow artifacts, and promotes those bytes without
+rebuilding. It then adds a separate keyless Sigstore bundle for each native and
+plugin archive. The signing job receives a short-lived GitLab OIDC token with
 the `sigstore` audience, records the signing identity through Fulcio/Rekor, and
 verifies the bundle against the exact GitLab project, `.gitlab-ci.yml`, and tag
 identity before publication. This authenticates the archive at release time;
@@ -53,8 +56,8 @@ multiple platform artifacts, the release evidence must retain the limitation
 that it is a superset inventory rather than an exact per-artifact dependency
 graph.
 
-The canonical release matrix builds and smoke-tests six targets in native or
-production-like runner environments:
+The canonical cross-provider release matrix builds and smoke-tests six targets
+in native or production-like GitHub-hosted runner environments:
 
 - Windows MSVC on x86-64, with ARM64 cross-built using Microsoft's ARM64 tools
   and its PE machine type verified;

@@ -15,6 +15,7 @@ the public compatibility boundary stabilizes.
 - Add deterministic `.tar.gz` and `.zip` packaging with normalized metadata,
   safe path handling, and reproducibility checks.
 - Add native release qualification for Windows, Linux GNU, and macOS on x86-64
-  and ARM64, plus independently packaged Codex and Claude Code plugin files.
+  and ARM64, plus independently packaged Codex and Claude Code plugin files,
+  using an immutable GitHub-builder-to-GitLab-publisher handoff.
 - Add keyless Sigstore signatures for every distributed archive and a tested
   safe roll-forward recovery procedure.

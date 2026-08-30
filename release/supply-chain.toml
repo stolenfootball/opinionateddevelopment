@@ -1,5 +1,12 @@
 schema = 1
 
+[build]
+provider = "github-actions"
+workflow = ".github/workflows/release-build.yml"
+handoff = "internal-workflow-artifact"
+publisher = "gitlab-ci"
+publisher_workflow = ".gitlab-ci.yml"
+
 [sbom]
 format = "cyclonedx-json"
 specification_version = "1.5"

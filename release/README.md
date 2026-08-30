@@ -1,8 +1,11 @@
 # Release operations
 
-The GitLab tag pipeline is the only supported way to publish OpDev. It builds,
-tests, packages, signs, and publishes one immutable bundle for each exact tag.
-Do not upload, replace, or reconstruct release assets manually.
+The protected GitLab tag pipeline is the only supported way to publish OpDev.
+It mirrors the exact tag revision to GitHub, dispatches ephemeral native GitHub
+builders, retrieves their immutable archives, and then generates evidence,
+signs, and publishes from GitLab. GitHub Actions artifacts are an internal build
+handoff, not a supported distribution path. Do not upload, replace, or
+reconstruct release assets manually.
 
 ## Candidate and final release
 
@@ -19,10 +22,11 @@ Do not upload, replace, or reconstruct release assets manually.
    qualified revision. The final tag runs the complete pipeline again; it does
    not promote candidate bytes under a new identity.
 
-The separate final build is intentional because the versioned asset names and
-tag-bound signing identity differ. Within each tag pipeline, every published
-byte is built once and promoted unchanged through evidence, signing, and
-publication.
+The separate final build is intentional because the versioned asset names,
+source revision, and tag-bound signing identity differ. Within each tag
+pipeline, every published archive is built once on its target runner and
+promoted unchanged through the GitHub artifact handoff, GitLab evidence,
+signing, and publication.
 
 ## Consumer verification
 
