@@ -1,0 +1,20 @@
+[package]
+name = "opdev-remote"
+description = "Read-only GitHub and GitLab policy audits for OpDev"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opdev-core = { path = "../opdev-core" }
+opdev-project = { path = "../opdev-project" }
+reqwest.workspace = true
+rustls.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true

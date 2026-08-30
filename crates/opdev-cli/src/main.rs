@@ -15,6 +15,7 @@ use opdev_project::{
     CiProvider, CoverageMode, DeliveryStatus, FileChange, MANIFEST_PATH, ProjectManifest,
     RecoveryStrategy, discover, reconcile_agent_files,
 };
+use opdev_remote::{RemoteAudit, RemoteCapability, audit};
 
 #[derive(Debug, Parser)]
 #[command(name = "opdev", version, about = "Evidence-driven software delivery")]
@@ -288,12 +289,12 @@ fn check_project(args: &CheckArgs) -> Result<ExitCode> {
     if args.ci {
         apply_local_ci(&root, &manifest, &mut report)?;
     }
+    if args.remote {
+        apply_remote_audit(&manifest, &mut report)?;
+    }
     match args.format {
         OutputFormat::Human => print_human_report(&report),
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
-    }
-    if args.remote {
-        eprintln!("note: read-only remote auditing is added in Phase 7; no remote was queried");
     }
     let gate = if args.ci {
         Gate::Integration
@@ -347,6 +348,54 @@ fn apply_capability(report: &mut CheckReport, rule_id: &str, capability: &Capabi
     {
         result.outcome = capability.outcome;
         result.verifier = opdev_core::VerificationSource::Ci;
+        result.evidence.clone_from(&capability.evidence);
+        result.diagnostic.clone_from(&capability.diagnostic);
+    }
+}
+
+fn apply_remote_audit(manifest: &ProjectManifest, report: &mut CheckReport) -> Result<()> {
+    let audit = audit(manifest).context("read-only remote audit could not start")?;
+    apply_remote_capability(report, "MCD-CI-001", &audit.ci);
+    apply_remote_capability(report, "MCD-TRUNK-001", &audit.trunk);
+    apply_remote_capability(report, "MCD-TEST-002", &audit.trunk_pipeline);
+
+    let mut flow = audit.trunk_pipeline.clone();
+    if flow.outcome == Outcome::Passed {
+        flow.outcome = Outcome::NotApplicable;
+        flow.diagnostic = None;
+        flow.evidence.push(opdev_core::Evidence {
+            kind: "applicability".into(),
+            summary:
+                "The latest trunk pipeline is green, so the red-trunk stop rule does not apply"
+                    .into(),
+            location: None,
+        });
+    }
+    apply_remote_capability(report, "MCD-FLOW-001", &flow);
+
+    let mut lifecycle_evidence = audit.branch_lifecycle.evidence.clone();
+    lifecycle_evidence.extend(audit.trunk_protection.evidence.clone());
+    let lifecycle = RemoteCapability {
+        outcome: Outcome::Unverified,
+        evidence: lifecycle_evidence,
+        diagnostic: Some(
+            "Provider settings do not prove branch origin, age, daily integration, or deletion for every branch"
+                .into(),
+        ),
+    };
+    apply_remote_capability(report, "MCD-TRUNK-002", &lifecycle);
+    reaggregate(report)?;
+    Ok(())
+}
+
+fn apply_remote_capability(report: &mut CheckReport, rule_id: &str, capability: &RemoteCapability) {
+    if let Some(result) = report
+        .rules
+        .iter_mut()
+        .find(|result| result.rule_id.as_str() == rule_id)
+    {
+        result.outcome = capability.outcome;
+        result.verifier = opdev_core::VerificationSource::Remote;
         result.evidence.clone_from(&capability.evidence);
         result.diagnostic.clone_from(&capability.diagnostic);
     }
@@ -437,9 +486,26 @@ fn doctor(args: &DoctorArgs) -> Result<()> {
         }
     }
     if args.remote {
-        println!("- remote audit not run: read-only provider auditing is added in Phase 7");
+        let audit = audit(&manifest).context("read-only remote audit could not start")?;
+        print_remote_audit(&audit);
     }
     Ok(())
+}
+
+fn print_remote_audit(audit: &RemoteAudit) {
+    println!("Remote: {}", audit.repository);
+    for (name, capability) in [
+        ("ci", &audit.ci),
+        ("trunk", &audit.trunk),
+        ("trunk_protection", &audit.trunk_protection),
+        ("trunk_pipeline", &audit.trunk_pipeline),
+        ("branch_lifecycle", &audit.branch_lifecycle),
+    ] {
+        println!("- {name}: {:?}", capability.outcome);
+        if let Some(diagnostic) = &capability.diagnostic {
+            println!("  {diagnostic}");
+        }
+    }
 }
 
 fn load_project(start: &Path) -> Result<(PathBuf, ProjectManifest)> {

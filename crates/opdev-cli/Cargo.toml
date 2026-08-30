@@ -18,6 +18,7 @@ opdev-ci = { path = "../opdev-ci" }
 opdev-core = { path = "../opdev-core" }
 opdev-engine = { path = "../opdev-engine" }
 opdev-project = { path = "../opdev-project" }
+opdev-remote = { path = "../opdev-remote" }
 serde_json.workspace = true
 
 [lints]
