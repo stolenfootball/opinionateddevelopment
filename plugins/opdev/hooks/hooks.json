@@ -1,0 +1,16 @@
+{
+  "description": "Give Claude Code deterministic OpDev initialization state before each prompt.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/opdev-context.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
