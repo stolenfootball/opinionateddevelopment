@@ -1,0 +1,12 @@
+{
+  "name": "opdev",
+  "description": "Evidence-driven software development with mandatory MinimumCD rules, flexible project contracts, and cross-agent continuity.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Opinionated Development contributors"
+  },
+  "homepage": "https://gitlab.com/stolenfootball-tools/opinionateddevelopment",
+  "repository": "https://gitlab.com/stolenfootball-tools/opinionateddevelopment.git",
+  "license": "Apache-2.0",
+  "keywords": ["software-development", "testing", "continuous-delivery", "minimumcd"]
+}

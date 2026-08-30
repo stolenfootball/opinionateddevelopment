@@ -1,0 +1,120 @@
+schema: 1
+project:
+  - rule_id: MCD-CONFIG-001
+    outcome: passed
+    summary: Behavior-controlling schemas, manifests, rules, templates, and toolchain versions are versioned and tested.
+    evidence:
+      - kind: repository
+        summary: Strict project, report, profile, extension, evidence, and release schemas are checked into version control.
+        location: schema
+      - kind: test
+        summary: Workspace tests parse schemas, manifests, profiles, CI templates, agent files, and protocol messages.
+        location: crates
+  - rule_id: OPDEV-SEC-001
+    outcome: passed
+    summary: The project documents its attack surface and applies proportional controls at each untrusted boundary.
+    evidence:
+      - kind: policy
+        summary: Reporting, repository trust, command execution, remote audit, extension, and release-evidence boundaries are documented.
+        location: SECURITY.md
+      - kind: test
+        summary: Safe command execution, output bounds, process-tree timeouts, strict protocols, and remote host restrictions have automated tests.
+        location: crates
+  - rule_id: OPDEV-SEC-002
+    outcome: passed
+    summary: Untrusted change CI is separated from tag-only publication credentials and uses least-privilege permissions.
+    evidence:
+      - kind: ci
+        summary: GitLab merge-request verification does not use publication tokens; package upload and OIDC signing are tag-only jobs.
+        location: .gitlab-ci.yml
+      - kind: ci
+        summary: GitHub change CI declares read-only contents permission and uses full-SHA pinned actions.
+        location: .github/workflows/opdev.yml
+changes:
+  - fingerprint: 5009be9126727db41d869efd203b5350e2b6e83663a74a24e16e603301481d04
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: The tracked phase defines the outcome, representative validation, self-hosting, and release evidence acceptance.
+        evidence:
+          - kind: work
+            summary: Phase 10 identifies cross-platform fixtures, self-enforcement, and release artifact evidence as acceptance conditions.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: Durable process, extension, evidence, assurance, CI, and release decisions are recorded in the normative specification.
+        evidence:
+          - kind: decision
+            summary: The evidence-ledger decision records the generalized problem, alternatives, rationale, tradeoff, and reversal trigger.
+            location: spec/evidence-ledger.md
+          - kind: decision
+            summary: Extension and release boundaries are versioned alongside their schemas and implementations.
+            location: spec/extensions.md
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The implementation branch originated from main, remained short-lived, and GitLab is configured to remove source branches after merge.
+        evidence:
+          - kind: git
+            summary: The phase commits are a linear descendant of main and were produced during the same working day.
+            location: codex/opdev-0.1
+          - kind: remote
+            summary: GitLab reports remove_source_branch_after_merge enabled and main protected against force pushes.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/settings/merge_requests
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: Active work integrated into the implementation branch repeatedly within one working day and is ready for its trunk pipeline.
+        evidence:
+          - kind: git
+            summary: Each of the ten bounded phase commits and the final dogfood change was produced on 2026-08-30.
+            location: codex/opdev-0.1
+      - rule_id: MCD-FLOW-001
+        outcome: not_applicable
+        summary: No failing required trunk pipeline exists during initial CI bootstrap; GitLab now requires successful pipelines before merge.
+        evidence:
+          - kind: remote
+            summary: The project has no red trunk pipeline, and only_allow_merge_if_pipeline_succeeds is enabled.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: Existing CLI, schema, report, plugin, hook, and CI behavior remains covered while the evidence and release surfaces are additive.
+        evidence:
+          - kind: test
+            summary: All workspace unit, integration, schema, timeout, discovery, provider, and release tests pass under Rust 1.97.0.
+            location: crates
+          - kind: validation
+            summary: Codex and Claude plugin validators accept the shared plugin and marketplace.
+            location: plugins/opdev
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: Material acceptance conditions and selected risks are traced to automated suites, provider lint, plugin validation, and release evidence checks.
+        evidence:
+          - kind: work
+            summary: Phase 10 acceptance is represented by multi-ecosystem fixtures, self-checks, native matrix configuration, signing, SBOM, provenance, and documentation.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
+          - kind: test
+            summary: Canonical format, Clippy, test, release-build, deterministic package smoke, GitLab lint, and both plugin validation commands all complete successfully.
+            location: .opdev/project.yaml
+          - kind: ci
+            summary: Native x86-64 and ARM64 archives for Windows, Linux GNU, and macOS were reproducibly packaged and smoke-tested on their declared GitHub runners.
+            location: https://github.com/stolenfootball/opinionateddevelopment/actions/runs/33329402980
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: Agent-authored implementation is evaluated by the same strict compiler, linter, tests, schemas, CI linter, and evidence rules as any contribution.
+        evidence:
+          - kind: policy
+            summary: Persistent agent guidance explicitly rejects self-attestation and requires canonical evidence.
+            location: AGENTS.md
+          - kind: test
+            summary: The complete agent-authored workspace passes the canonical project suites.
+            location: .opdev/project.yaml
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: Dogfooding exposed permanently blocked CI from missing human evidence, which was generalized into a bound evidence capability and regression tests.
+        evidence:
+          - kind: decision
+            summary: The generalized failure, alternatives, selected design, limitation, and reversal trigger are documented.
+            location: spec/evidence-ledger.md
+          - kind: test
+            summary: Tests verify ledger schemas, satisfying-only claims, exact fingerprint reuse, exclusion of only the ledger, and fail-closed unindexed content.
+            location: crates/opdev-project/src/evidence.rs

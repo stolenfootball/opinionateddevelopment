@@ -1,0 +1,23 @@
+[package]
+name = "opdev-project"
+description = "OpDev project contract, validation, discovery, and initialization"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+jsonschema.workspace = true
+opdev-core = { path = "../opdev-core" }
+serde.workspace = true
+serde-saphyr.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

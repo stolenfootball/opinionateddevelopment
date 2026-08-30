@@ -1,0 +1,222 @@
+name: Cross-platform release build
+run-name: opdev-${{ inputs.release_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact branch mirrored from the protected GitLab tag pipeline
+        required: true
+        type: string
+      source_revision:
+        description: Exact Git source revision to verify after checkout
+        required: true
+        type: string
+      release_tag:
+        description: GitLab release tag used only to correlate this build
+        required: true
+        type: string
+      version:
+        description: SemVer used in archive names
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opdev-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  RUST_VERSION: "1.97.0"
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            artifact: linux-x86_64
+            package_plugin: "true"
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: linux-arm64
+            package_plugin: "false"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out the GitLab release revision
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_REVISION: ${{ inputs.source_revision }}
+        run: |
+          git clone --branch "$SOURCE_REF" --depth 1 https://github.com/stolenfootball/opinionateddevelopment.git source
+          cd source
+          test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
+      - name: Install the pinned Rust toolchain
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+          rustup target add --toolchain "$RUST_VERSION" "$TARGET"
+      - name: Build, reproduce, and smoke-test the archive
+        env:
+          OPDEV_VERSION: ${{ inputs.version }}
+          TARGET: ${{ matrix.target }}
+          PACKAGE_PLUGIN: ${{ matrix.package_plugin }}
+        working-directory: source
+        run: |
+          cargo +"$RUST_VERSION" test --locked -p opdev-release
+          cargo +"$RUST_VERSION" build --release --locked -p opdev-cli --target "$TARGET"
+          archive="opdev-${OPDEV_VERSION}-${TARGET}.tar.gz"
+          cargo +"$RUST_VERSION" run --locked -p opdev-cli -- release package --format tar-gz --executable-entry "target/$TARGET/release/opdev=opdev" --entry LICENSE=LICENSE --entry README.md=README.md --output "release-artifacts/$archive"
+          cargo +"$RUST_VERSION" run --locked -p opdev-cli -- release package --format tar-gz --executable-entry "target/$TARGET/release/opdev=opdev" --entry LICENSE=LICENSE --entry README.md=README.md --output "release-repro/$archive"
+          cmp "release-artifacts/$archive" "release-repro/$archive"
+          mkdir package-smoke
+          tar -xzf "release-artifacts/$archive" -C package-smoke
+          package-smoke/opdev version | grep -F "opdev ${OPDEV_VERSION}"
+          if [ "$PACKAGE_PLUGIN" = true ]; then
+            cargo +"$RUST_VERSION" run --locked -p opdev-cli -- release package --format tar-gz --entry .agents/plugins/marketplace.json=.agents/plugins/marketplace.json --entry .claude-plugin/marketplace.json=.claude-plugin/marketplace.json --entry plugins/opdev=plugins/opdev --entry LICENSE=LICENSE --output "release-artifacts/opdev-plugin-${OPDEV_VERSION}.tar.gz"
+            cargo +"$RUST_VERSION" run --locked -p opdev-cli -- release package --format tar-gz --entry .agents/plugins/marketplace.json=.agents/plugins/marketplace.json --entry .claude-plugin/marketplace.json=.claude-plugin/marketplace.json --entry plugins/opdev=plugins/opdev --entry LICENSE=LICENSE --output "release-repro/opdev-plugin-${OPDEV_VERSION}.tar.gz"
+            cmp "release-artifacts/opdev-plugin-${OPDEV_VERSION}.tar.gz" "release-repro/opdev-plugin-${OPDEV_VERSION}.tar.gz"
+            mkdir plugin-smoke
+            tar -xzf "release-artifacts/opdev-plugin-${OPDEV_VERSION}.tar.gz" -C plugin-smoke
+            test -f plugin-smoke/.agents/plugins/marketplace.json
+            test -f plugin-smoke/.claude-plugin/marketplace.json
+            test -f plugin-smoke/plugins/opdev/skills/opdev/SKILL.md
+          fi
+      - name: Preserve the immutable archive
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: ${{ matrix.artifact }}
+          path: source/release-artifacts/*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            machine: "8664"
+            artifact: windows-x86_64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            machine: "aa64"
+            artifact: windows-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out the GitLab release revision
+        shell: pwsh
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_REVISION: ${{ inputs.source_revision }}
+        run: |
+          git clone --branch $env:SOURCE_REF --depth 1 https://github.com/stolenfootball/opinionateddevelopment.git source
+          Set-Location source
+          if ((git rev-parse HEAD) -ne $env:SOURCE_REVISION) { throw "source revision mismatch" }
+      - name: Install the pinned Rust toolchain
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install $env:RUST_VERSION --profile minimal --no-self-update
+          rustup target add --toolchain $env:RUST_VERSION $env:TARGET
+      - name: Build, reproduce, and smoke-test the archive
+        shell: pwsh
+        working-directory: source
+        env:
+          OPDEV_VERSION: ${{ inputs.version }}
+          TARGET: ${{ matrix.target }}
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          cargo "+$env:RUST_VERSION" test --locked -p opdev-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo "+$env:RUST_VERSION" build --release --locked -p opdev-cli --target $env:TARGET
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $binary = "target/$env:TARGET/release/opdev.exe"
+          $bytes = [IO.File]::ReadAllBytes($binary)
+          $header = [BitConverter]::ToInt32($bytes, 0x3c)
+          $machine = [BitConverter]::ToUInt16($bytes, $header + 4)
+          if ($machine -ne [Convert]::ToUInt16($env:EXPECTED_MACHINE, 16)) { throw "unexpected PE machine" }
+          $archive = "opdev-$env:OPDEV_VERSION-$env:TARGET.zip"
+          cargo "+$env:RUST_VERSION" run --locked -p opdev-cli -- release package --format zip --executable-entry "$binary=opdev.exe" --entry "LICENSE=LICENSE" --entry "README.md=README.md" --output "release-artifacts/$archive"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo "+$env:RUST_VERSION" run --locked -p opdev-cli -- release package --format zip --executable-entry "$binary=opdev.exe" --entry "LICENSE=LICENSE" --entry "README.md=README.md" --output "release-repro/$archive"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-FileHash "release-artifacts/$archive").Hash -ne (Get-FileHash "release-repro/$archive").Hash) { throw "Windows package is not reproducible" }
+          Expand-Archive "release-artifacts/$archive" -DestinationPath package-smoke
+          & .\package-smoke\opdev.exe version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve the immutable archive
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: ${{ matrix.artifact }}
+          path: source/release-artifacts/*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            architecture: x86_64
+            artifact: macos-x86_64
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            architecture: arm64
+            artifact: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out the GitLab release revision
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_REVISION: ${{ inputs.source_revision }}
+        run: |
+          git clone --branch "$SOURCE_REF" --depth 1 https://github.com/stolenfootball/opinionateddevelopment.git source
+          cd source
+          test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
+      - name: Install the pinned Rust toolchain
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+          rustup target add --toolchain "$RUST_VERSION" "$TARGET"
+      - name: Build, reproduce, and smoke-test the archive
+        env:
+          OPDEV_VERSION: ${{ inputs.version }}
+          TARGET: ${{ matrix.target }}
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+        working-directory: source
+        run: |
+          cargo +"$RUST_VERSION" test --locked -p opdev-release
+          cargo +"$RUST_VERSION" build --release --locked -p opdev-cli --target "$TARGET"
+          lipo -info "target/$TARGET/release/opdev" | grep -F "$EXPECTED_ARCHITECTURE"
+          archive="opdev-${OPDEV_VERSION}-${TARGET}.tar.gz"
+          cargo +"$RUST_VERSION" run --locked -p opdev-cli -- release package --format tar-gz --executable-entry "target/$TARGET/release/opdev=opdev" --entry LICENSE=LICENSE --entry README.md=README.md --output "release-artifacts/$archive"
+          cargo +"$RUST_VERSION" run --locked -p opdev-cli -- release package --format tar-gz --executable-entry "target/$TARGET/release/opdev=opdev" --entry LICENSE=LICENSE --entry README.md=README.md --output "release-repro/$archive"
+          cmp "release-artifacts/$archive" "release-repro/$archive"
+          mkdir package-smoke
+          tar -xzf "release-artifacts/$archive" -C package-smoke
+          package-smoke/opdev version | grep -F "opdev ${OPDEV_VERSION}"
+      - name: Preserve the immutable archive
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: ${{ matrix.artifact }}
+          path: source/release-artifacts/*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0

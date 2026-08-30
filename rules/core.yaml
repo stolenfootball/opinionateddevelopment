@@ -1,0 +1,410 @@
+catalog_version: 1
+rules:
+  - id: OPDEV-AUTH-001
+    kind: opdev
+    title: Assign one authority to each important fact
+    statement: Important project facts MUST have one declared authoritative source; pointers and generated views MUST NOT become competing authorities.
+    applicability: all initialized projects
+    gates: [development, integration, compliance]
+    verification: [manifest, evidence, agent]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: OPDEV-AUTH-002
+    kind: opdev
+    title: Keep active status in the work system
+    statement: Active work status, sequencing, and roadmap state MUST live in the declared work authority rather than static OpDev or design documents.
+    applicability: projects performing tracked work
+    gates: [development, compliance]
+    verification: [manifest, evidence, agent]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: OPDEV-WORK-001
+    kind: opdev
+    title: Make substantive work executable
+    statement: Substantive work MUST identify its problem, intended outcome, scope, exclusions, acceptance conditions, required evidence, relevant authorities, and material dependencies or risks.
+    applicability: substantive software changes
+    gates: [development, integration]
+    verification: [evidence, agent]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: OPDEV-DESIGN-001
+    kind: opdev
+    title: Record durable decisions proportionally
+    statement: Durable architecture or contract decisions MUST record the generalized problem, alternatives, rationale, supporting evidence, canonical authority update, and a reversal trigger.
+    applicability: durable architecture or contract decisions
+    gates: [integration, compliance]
+    verification: [manifest, evidence, agent]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: MCD-CI-001
+    kind: minimumcd
+    title: Use continuous integration
+    statement: The project MUST use continuous integration to evaluate changes and trunk.
+    applicability: all initialized projects
+    gates: [integration, delivery, compliance]
+    verification: [manifest, ci, remote]
+    sources:
+      - name: MinimumCD
+        url: https://minimumcd.org/
+
+  - id: MCD-TRUNK-001
+    kind: minimumcd
+    title: Use one trunk
+    statement: The project MUST have one trunk that is the integration source of truth.
+    applicability: all initialized projects
+    gates: [development, integration, delivery, compliance]
+    verification: [manifest, git, remote]
+    sources:
+      - name: MinimumCD
+        url: https://minimumcd.org/
+
+  - id: MCD-TRUNK-002
+    kind: minimumcd
+    title: Keep branches short-lived
+    statement: Development branches MUST originate from trunk, reintegrate into trunk, remain short-lived, and be removed after integration.
+    applicability: projects using branches or worktrees
+    gates: [integration, compliance]
+    verification: [git, remote, agent]
+    sources:
+      - name: MinimumCD trunk-based development
+        url: https://beyond.minimumcd.org/docs/reference/practices/trunk-based-development/
+
+  - id: MCD-TRUNK-003
+    kind: minimumcd
+    title: Integrate at least daily
+    statement: Active software changes MUST integrate into trunk at least once per working day.
+    applicability: active multi-change development
+    gates: [development, integration, compliance]
+    verification: [git, remote, agent]
+    sources:
+      - name: MinimumCD
+        url: https://minimumcd.org/
+
+  - id: MCD-TEST-001
+    kind: minimumcd
+    title: Test before integration
+    statement: Automated tests required for the change MUST pass before it integrates into trunk.
+    applicability: all software changes
+    gates: [integration, compliance]
+    verification: [ci, evidence]
+    sources:
+      - name: MinimumCD
+        url: https://minimumcd.org/
+
+  - id: MCD-TEST-002
+    kind: minimumcd
+    title: Test integrated trunk
+    statement: Automated tests MUST evaluate the integrated result on trunk after integration.
+    applicability: all integrated changes
+    gates: [delivery, compliance]
+    verification: [ci, remote, evidence]
+    sources:
+      - name: MinimumCD
+        url: https://minimumcd.org/
+
+  - id: MCD-FLOW-001
+    kind: minimumcd
+    title: Stop feature work when trunk is red
+    statement: New feature development MUST stop while the required trunk pipeline is failing; work to diagnose, repair, recover, or restore the pipeline remains permitted.
+    applicability: projects with a failing required trunk pipeline
+    gates: [development, compliance]
+    verification: [remote, agent]
+    sources:
+      - name: MinimumCD
+        url: https://minimumcd.org/
+
+  - id: MCD-COMPAT-001
+    kind: minimumcd
+    title: Preserve delivered behavior
+    statement: New work MUST NOT break behavior that the project currently declares delivered and supported.
+    applicability: changes to delivered software
+    gates: [integration, delivery, compliance]
+    verification: [ci, evidence]
+    sources:
+      - name: MinimumCD
+        url: https://minimumcd.org/
+
+  - id: MCD-DELIVERY-001
+    kind: minimumcd
+    title: Use one automated delivery path
+    statement: The declared application pipeline MUST be the only supported way to deliver an artifact to any environment or consumer-facing destination.
+    applicability: projects that deliver software
+    gates: [delivery, compliance]
+    verification: [manifest, ci, remote]
+    sources:
+      - name: MinimumCD single path to production
+        url: https://beyond.minimumcd.org/docs/reference/practices/single-path-to-production/
+
+  - id: MCD-PIPELINE-001
+    kind: minimumcd
+    title: Make the pipeline verdict definitive
+    statement: The pipeline MUST decide whether a revision and artifact are deployable, and that verdict MUST be definitive for the behavior being delivered.
+    applicability: projects that deliver software
+    gates: [delivery, compliance]
+    verification: [manifest, ci, evidence]
+    sources:
+      - name: MinimumCD deterministic pipeline
+        url: https://beyond.minimumcd.org/docs/reference/practices/deterministic-pipeline/
+
+  - id: MCD-ARTIFACT-001
+    kind: minimumcd
+    title: Define deployable artifacts
+    statement: Pipeline outputs MUST satisfy the project's declared definition of deployable before delivery.
+    applicability: projects that produce deliverable artifacts
+    gates: [delivery, compliance]
+    verification: [manifest, ci, evidence]
+    sources:
+      - name: MinimumCD definition of deployable
+        url: https://beyond.minimumcd.org/docs/reference/practices/definition-of-deployable/
+
+  - id: MCD-ARTIFACT-002
+    kind: minimumcd
+    title: Build once and promote immutable artifacts
+    statement: A deliverable artifact MUST be immutable, traceable to its source, built once, and promoted without rebuilding the bytes.
+    applicability: projects that produce deliverable artifacts
+    gates: [delivery, compliance]
+    verification: [ci, evidence, remote]
+    sources:
+      - name: MinimumCD immutable artifacts
+        url: https://beyond.minimumcd.org/docs/reference/practices/immutable-artifacts/
+
+  - id: MCD-ENV-001
+    kind: minimumcd
+    title: Validate in a production-like environment
+    statement: Delivery qualification MUST exercise the artifact in an environment representative of the material risks of its consumer-facing destination.
+    applicability: projects that deliver software
+    gates: [delivery, compliance]
+    verification: [manifest, ci, evidence]
+    sources:
+      - name: MinimumCD production-like environments
+        url: https://beyond.minimumcd.org/docs/reference/practices/production-like-environments/
+
+  - id: MCD-RECOVERY-001
+    kind: minimumcd
+    title: Automate and test recovery
+    statement: The project MUST provide an on-demand automated and tested recovery path, using rollback or a declared safe roll-forward strategy when reversal is unsafe.
+    applicability: projects that deliver software
+    gates: [delivery, compliance]
+    verification: [manifest, ci, evidence]
+    sources:
+      - name: MinimumCD rollback
+        url: https://beyond.minimumcd.org/docs/reference/practices/rollback/
+
+  - id: MCD-CONFIG-001
+    kind: minimumcd
+    title: Version and test behavior configuration
+    statement: Configuration that controls application behavior MUST be versioned and tested with the artifact.
+    applicability: projects with behavior configuration
+    gates: [integration, delivery, compliance]
+    verification: [manifest, ci, evidence]
+    sources:
+      - name: MinimumCD application configuration
+        url: https://beyond.minimumcd.org/docs/reference/practices/application-configuration/
+
+  - id: MCD-CONFIG-002
+    kind: minimumcd
+    title: Externalize environment-specific values
+    statement: Environment-specific values MUST be injected through the automated delivery path without rebuilding the artifact or introducing manual configuration drift.
+    applicability: projects with environment-specific configuration
+    gates: [delivery, compliance]
+    verification: [manifest, ci, remote, evidence]
+    sources:
+      - name: MinimumCD application configuration
+        url: https://beyond.minimumcd.org/docs/reference/practices/application-configuration/
+
+  - id: OPDEV-TEST-001
+    kind: opdev
+    title: Derive testing from quality risks
+    statement: The project MUST identify applicable quality risks and derive testing objectives and acceptance evidence from them.
+    applicability: all initialized projects
+    gates: [development, integration, compliance]
+    verification: [manifest, evidence, agent]
+    sources:
+      - name: ISO/IEC 25010 public abstract
+        url: https://www.iso.org/standard/78176.html
+      - name: ISO/IEC/IEEE 29119 series public overview
+        url: https://committee.iso.org/sites/jtc1sc7/home/projects/flagship-standards/isoiecieee-29119-series.html
+
+  - id: OPDEV-TEST-002
+    kind: opdev
+    title: Trace acceptance conditions to evidence
+    statement: Every material acceptance condition and selected quality risk MUST identify its verification method and required evidence.
+    applicability: substantive software changes
+    gates: [integration, delivery, compliance]
+    verification: [evidence, agent]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: OPDEV-TEST-003
+    kind: opdev
+    title: Test behavioral changes
+    statement: Every behavior-changing modification MUST add or update automated verification unless existing coverage is demonstrated or a specific limitation is justified.
+    applicability: behavior-changing modifications
+    gates: [integration, compliance]
+    verification: [ci, evidence, agent]
+    sources:
+      - name: OpenSSF OSPS Baseline
+        url: https://baseline.openssf.org/
+
+  - id: OPDEV-TEST-004
+    kind: opdev
+    title: Prevent recurrence of escaped defects
+    statement: An escaped defect or vulnerability MUST produce automated regression protection or a documented explanation of why automation cannot prevent recurrence.
+    applicability: escaped defects and vulnerabilities
+    gates: [integration, compliance]
+    verification: [evidence, agent]
+    sources:
+      - name: NIST Secure Software Development Framework 1.1
+        url: https://csrc.nist.gov/pubs/sp/800/218/final
+
+  - id: OPDEV-TEST-005
+    kind: opdev
+    title: Preserve trustworthy test verdicts
+    statement: Required tests MUST be deterministic under declared conditions; retries, flakes, quarantine, skips, and unavailable evidence MUST remain visible and MUST NOT silently qualify a release.
+    applicability: automated qualification tests
+    gates: [integration, delivery, compliance]
+    verification: [ci, evidence]
+    sources:
+      - name: Google Testing Blog on flaky tests
+        url: https://testing.googleblog.com/2016/05/flaky-tests-at-google-and-how-we.html
+
+  - id: OPDEV-TEST-006
+    kind: opdev
+    title: Use coverage as risk evidence
+    statement: Code coverage MAY identify untested risk but MUST NOT be the sole evidence of test quality or be interpreted as a universal project-independent threshold.
+    applicability: projects that collect code coverage
+    gates: [integration, compliance]
+    verification: [manifest, evidence]
+    sources:
+      - name: Google code coverage best practices
+        url: https://testing.googleblog.com/2020/08/code-coverage-best-practices.html
+
+  - id: OPDEV-TEST-007
+    kind: opdev
+    title: Declare live and external evidence
+    statement: Tests that depend on live services, hardware, stores, fleets, models, or other external systems MUST declare their environment, dependencies, variability, freshness, and effect on deployability or effectiveness.
+    applicability: projects with live or external qualification
+    gates: [delivery, compliance]
+    verification: [manifest, evidence]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: OPDEV-EVAL-001
+    kind: opdev
+    title: Separate correctness from effectiveness
+    statement: Deterministic correctness and deployability evidence MUST remain distinct from evidence that the software achieves its intended purpose.
+    applicability: projects with effectiveness objectives
+    gates: [compliance]
+    verification: [manifest, evidence, agent]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: OPDEV-SEC-001
+    kind: opdev
+    title: Apply proportional secure-development practices
+    statement: The project MUST identify its attack surface and apply proportional secure design, dependency, verification, vulnerability-response, and root-cause practices.
+    applicability: all initialized projects, proportional to attack surface
+    gates: [integration, delivery, compliance]
+    verification: [manifest, ci, evidence]
+    sources:
+      - name: NIST Secure Software Development Framework 1.1
+        url: https://csrc.nist.gov/pubs/sp/800/218/final
+
+  - id: OPDEV-SEC-002
+    kind: opdev
+    title: Isolate untrusted CI inputs
+    statement: CI processing untrusted code or metadata MUST validate inputs, prevent access to privileged credentials, and grant only the permissions required by each task.
+    applicability: CI that processes untrusted code or metadata
+    gates: [integration, delivery, compliance]
+    verification: [ci, remote, evidence]
+    sources:
+      - name: OpenSSF OSPS Baseline
+        url: https://baseline.openssf.org/
+
+  - id: OPDEV-SUPPLY-001
+    kind: opdev
+    title: Produce artifact provenance
+    statement: Released artifacts MUST have machine-readable provenance connecting their digest to the source revision and build process.
+    applicability: projects that release artifacts
+    gates: [delivery, compliance]
+    verification: [ci, evidence]
+    sources:
+      - name: SLSA 1.2 provenance
+        url: https://slsa.dev/spec/v1.2/provenance
+
+  - id: OPDEV-SUPPLY-002
+    kind: opdev
+    title: Inventory shipped components
+    statement: A released artifact that ships third-party components MUST include or reference a machine-readable software bill of materials associated with the artifact digest.
+    applicability: released artifacts containing third-party components
+    gates: [delivery, compliance]
+    verification: [ci, evidence]
+    sources:
+      - name: NTIA minimum elements for an SBOM
+        url: https://www.ntia.gov/report/2021/minimum-elements-software-bill-materials-sbom
+
+  - id: OPDEV-A11Y-001
+    kind: opdev
+    title: Declare and verify accessibility targets
+    statement: User-facing software MUST declare an applicable accessibility target and MUST combine automated and human evidence where the selected standard cannot be verified automatically.
+    applicability: software with a user interface
+    gates: [integration, delivery, compliance]
+    verification: [manifest, ci, evidence]
+    sources:
+      - name: W3C Web Content Accessibility Guidelines 2.2
+        url: https://www.w3.org/TR/WCAG22/
+
+  - id: OPDEV-OPS-001
+    kind: opdev
+    title: Make operated software observable
+    statement: Operated software MUST expose sufficient user-centered health and diagnostic signals to verify delivery and investigate material failures.
+    applicability: operated software
+    gates: [delivery, compliance]
+    verification: [manifest, ci, evidence]
+    sources:
+      - name: OpenTelemetry observability primer
+        url: https://opentelemetry.io/docs/concepts/observability-primer/
+
+  - id: OPDEV-AI-001
+    kind: opdev
+    title: Hold agent-authored work to the same standard
+    statement: Agent-authored code, tests, configuration, and documentation MUST satisfy the same project requirements as human-authored work and MUST NOT be accepted solely because the producing agent claims correctness.
+    applicability: work produced with coding agents or generative systems
+    gates: [integration, delivery, compliance]
+    verification: [evidence, agent]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: OPDEV-LEARN-001
+    kind: opdev
+    title: Feed observed failures back into development
+    statement: Material observed failures MUST be generalized into a problem, decision or proposal, executable work, stronger capabilities, and repeated measurement as applicable.
+    applicability: material observed failures
+    gates: [development, compliance]
+    verification: [evidence, agent]
+    sources:
+      - name: OpDev normative specification
+        url: spec/README.md
+
+  - id: OPDEV-EXT-001
+    kind: opdev
+    title: Prevent extensions from weakening the core
+    statement: Extensions MAY add or strengthen requirements but MUST NOT disable a core rule, change its applicability, replace its result, or suppress its required evidence.
+    applicability: projects using extensions
+    gates: [development, integration, delivery, compliance]
+    verification: [manifest, extension, evidence]
+    sources:
+      - name: OpDev result semantics
+        url: spec/result-semantics.md

@@ -1,0 +1,6 @@
+interface:
+  display_name: "OpDev"
+  short_description: "Apply evidence-driven software delivery"
+  default_prompt: "Use OpDev for this software development task."
+policy:
+  allow_implicit_invocation: true

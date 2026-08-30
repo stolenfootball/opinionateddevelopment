@@ -1,0 +1,112 @@
+schema: 1
+name: nist-ssdf-derived
+version: "1.1"
+title: Informative OpDev mapping to NIST SSDF 1.1
+status: derived_mapping
+claim: This mapping helps route OpDev evidence to SSDF practice groups; selecting or passing it is not a NIST SSDF conformance claim and organizational practices still require independent assessment.
+source:
+  name: NIST SP 800-218 Secure Software Development Framework
+  version: "1.1"
+  url: https://csrc.nist.gov/pubs/sp/800/218/final
+levels: [baseline]
+requirements:
+  - id: PO.1
+    title: Define security requirements for software development
+    coverage: partial
+    mapped_rules: [OPDEV-AUTH-001, OPDEV-WORK-001, OPDEV-SEC-001]
+    limitation: OpDev can route and evaluate project evidence but cannot establish organization-wide requirements governance.
+  - id: PO.2
+    title: Implement roles and responsibilities
+    coverage: gap
+    mapped_rules: []
+    limitation: Organization-wide roles, training, and responsibility assignments are outside the project contract.
+  - id: PO.3
+    title: Implement supporting toolchains
+    coverage: partial
+    mapped_rules: [MCD-CI-001, MCD-TEST-001, OPDEV-SUPPLY-001]
+    limitation: Toolchain configuration evidence does not establish organizational tool governance.
+  - id: PO.4
+    title: Define and use criteria for software security checks
+    coverage: partial
+    mapped_rules: [OPDEV-SEC-001, OPDEV-SEC-002, OPDEV-EXT-001]
+    limitation: Project checks require a separately reviewed risk model and acceptance criteria.
+  - id: PO.5
+    title: Implement and maintain secure environments
+    coverage: partial
+    mapped_rules: [MCD-CONFIG-001, OPDEV-SUPPLY-001]
+    limitation: OpDev does not independently assess workstation, identity, or build-platform isolation.
+  - id: PS.1
+    title: Protect all forms of code from unauthorized access and tampering
+    coverage: partial
+    mapped_rules: [MCD-TRUNK-001, MCD-TRUNK-002, OPDEV-SUPPLY-001]
+    limitation: Remote audits cover selected repository controls and leave inaccessible facts unverified.
+  - id: PS.2
+    title: Provide a mechanism for verifying software release integrity
+    coverage: partial
+    mapped_rules: [MCD-ARTIFACT-001, OPDEV-SUPPLY-002]
+    limitation: Checksums and provenance require trusted distribution and verification to provide stronger integrity guarantees.
+  - id: PS.3
+    title: Archive and protect each software release
+    coverage: partial
+    mapped_rules: [MCD-ARTIFACT-001, MCD-ARTIFACT-002, OPDEV-SUPPLY-002]
+    limitation: Retention, access control, and long-term archival remain provider and organization responsibilities.
+  - id: PW.1
+    title: Design software to meet security requirements and mitigate risks
+    coverage: partial
+    mapped_rules: [OPDEV-DESIGN-001, OPDEV-SEC-001]
+    limitation: Threat modeling depth and design review remain risk-dependent human activities.
+  - id: PW.2
+    title: Review the design for security requirements and risk information
+    coverage: partial
+    mapped_rules: [OPDEV-DESIGN-001, OPDEV-SEC-001]
+    limitation: OpDev records evidence but cannot infer review quality from document presence.
+  - id: PW.3
+    title: Verify third-party software complies with requirements
+    coverage: partial
+    mapped_rules: [OPDEV-SUPPLY-001, OPDEV-SUPPLY-002]
+    limitation: An SBOM is inventory evidence, not proof that each dependency satisfies policy.
+  - id: PW.4
+    title: Reuse existing secured software where feasible
+    coverage: gap
+    mapped_rules: []
+    limitation: Component selection and reuse decisions are project-specific and not established by core evidence.
+  - id: PW.5
+    title: Create source code adhering to secure coding practices
+    coverage: partial
+    mapped_rules: [OPDEV-SEC-001, OPDEV-TEST-001]
+    limitation: Language- and domain-specific secure coding practices need project checks or future packs.
+  - id: PW.6
+    title: Configure compilation and builds to improve security
+    coverage: partial
+    mapped_rules: [MCD-PIPELINE-001, OPDEV-SUPPLY-001]
+    limitation: Compiler hardening and reproducibility requirements vary by toolchain and artifact.
+  - id: PW.7
+    title: Review or analyze human-readable code for vulnerabilities
+    coverage: partial
+    mapped_rules: [OPDEV-SEC-001, OPDEV-TEST-001]
+    limitation: Projects must define the applicable review and analysis methods.
+  - id: PW.8
+    title: Test executable code to identify vulnerabilities
+    coverage: partial
+    mapped_rules: [OPDEV-SEC-001, OPDEV-TEST-002, OPDEV-TEST-005]
+    limitation: Security test selection and sufficiency depend on the threat model.
+  - id: PW.9
+    title: Configure software securely by default
+    coverage: partial
+    mapped_rules: [MCD-CONFIG-001, MCD-CONFIG-002, OPDEV-SEC-001]
+    limitation: Safe defaults require artifact- and deployment-specific evidence.
+  - id: RV.1
+    title: Identify and confirm vulnerabilities on an ongoing basis
+    coverage: partial
+    mapped_rules: [OPDEV-SEC-002, OPDEV-LEARN-001]
+    limitation: OpDev does not provide vulnerability intelligence or triage ownership itself.
+  - id: RV.2
+    title: Assess, prioritize, and remediate vulnerabilities
+    coverage: partial
+    mapped_rules: [OPDEV-SEC-002, OPDEV-WORK-001, OPDEV-TEST-006]
+    limitation: Severity, response targets, and exception governance must be supplied by the project or organization.
+  - id: RV.3
+    title: Analyze vulnerabilities to identify root causes
+    coverage: partial
+    mapped_rules: [OPDEV-TEST-006, OPDEV-LEARN-001]
+    limitation: OpDev requires regression and learning evidence but cannot establish the depth of root-cause analysis.

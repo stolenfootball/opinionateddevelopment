@@ -1,0 +1,21 @@
+[package]
+name = "opdev-ci"
+description = "First-class CI provider adapters for OpDev"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opdev-core = { path = "../opdev-core" }
+opdev-project = { path = "../opdev-project" }
+serde_json.workspace = true
+serde-saphyr.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

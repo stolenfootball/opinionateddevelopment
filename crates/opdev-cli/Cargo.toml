@@ -1,0 +1,26 @@
+[package]
+name = "opdev-cli"
+description = "Cross-platform OpDev command-line interface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "opdev"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+opdev-ci = { path = "../opdev-ci" }
+opdev-core = { path = "../opdev-core" }
+opdev-engine = { path = "../opdev-engine" }
+opdev-project = { path = "../opdev-project" }
+opdev-release = { path = "../opdev-release" }
+opdev-remote = { path = "../opdev-remote" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

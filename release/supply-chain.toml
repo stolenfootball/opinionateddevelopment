@@ -1,0 +1,37 @@
+schema = 1
+
+[build]
+provider = "github-actions"
+workflow = ".github/workflows/release-build.yml"
+handoff = "internal-workflow-artifact"
+publisher = "gitlab-ci"
+publisher_workflow = ".gitlab-ci.yml"
+
+[sbom]
+format = "cyclonedx-json"
+specification_version = "1.5"
+generator = "cargo-cyclonedx"
+generator_version = "0.5.9"
+install = ["cargo", "install", "--locked", "cargo-cyclonedx", "--version", "0.5.9"]
+
+[provenance]
+statement = "in-toto-v1"
+predicate_type = "https://slsa.dev/provenance/v1"
+slsa_specification_version = "1.2"
+build_type = "https://opdev.dev/buildtypes/release/v1"
+
+[integrity]
+algorithm = "sha256"
+checksums_file = "SHA256SUMS"
+
+[signing]
+mode = "sigstore-keyless"
+bundle_suffix = ".sigstore.json"
+oidc_issuer = "https://gitlab.com"
+identity_pattern = "https://gitlab.com/stolenfootball-tools/opinionateddevelopment//.gitlab-ci.yml@refs/tags/<tag>"
+
+[claims]
+slsa_build_level = false
+trusted_builder = false
+signed_evidence = false
+note = "Canonical tag releases sign every native and plugin archive with GitLab OIDC and Sigstore. Checksums, the SBOM, manifest, and provenance are digest-bound but are not separately signed, so OpDev makes no signed-evidence or SLSA Build-level claim."

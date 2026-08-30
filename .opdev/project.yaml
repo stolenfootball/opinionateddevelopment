@@ -1,0 +1,128 @@
+schema: 1
+project:
+  kind: plugin
+  trunk: main
+  ci:
+    provider: gitlab
+    remote: git@gitlab.com:stolenfootball-tools/opinionateddevelopment.git
+authorities:
+  architecture:
+    kind: path
+    location: spec
+  contracts:
+    kind: path
+    location: spec
+  implementation:
+    kind: path
+    location: crates
+  testing:
+    kind: path
+    location: spec
+  work:
+    kind: tracker
+    location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues
+commands:
+  check:
+    argv:
+    - cargo
+    - test
+    - --workspace
+    - --all-features
+    timeout_seconds: 1800
+  format:
+    argv:
+    - cargo
+    - fmt
+    - --all
+    - --
+    - --check
+    timeout_seconds: 300
+  lint:
+    argv:
+    - cargo
+    - clippy
+    - --workspace
+    - --all-targets
+    - --all-features
+    - --
+    - -D
+    - warnings
+    timeout_seconds: 900
+  package:
+    argv:
+    - cargo
+    - build
+    - --release
+    - --locked
+    timeout_seconds: 1800
+  setup:
+    argv:
+    - cargo
+    - fetch
+    - --locked
+    timeout_seconds: 900
+quality:
+  risks:
+  - functional
+  - reliability
+  - security
+  - compatibility
+  - maintainability
+  - recoverability
+testing:
+  strategy_authority: testing
+  change_tests: required
+  escaped_defect_regressions: required_or_justified
+  flake_policy:
+    retries_visible: true
+    quarantine_requires_owner_issue_expiry: true
+  coverage:
+    mode: unconfigured
+  suites:
+  - id: format
+    command: format
+    stages:
+    - local
+    - pre_merge
+    - post_merge
+  - id: lint
+    command: lint
+    stages:
+    - local
+    - pre_merge
+    - post_merge
+  - id: check
+    command: check
+    stages:
+    - local
+    - pre_merge
+    - post_merge
+delivery:
+  status: migration_required
+  mode: release
+  artifact:
+    kind: plugin
+    locator: plugin:opdev
+  environments: []
+  recovery:
+    strategy: unconfigured
+assurance:
+  profiles:
+  - name: opdev-core
+    version: "1"
+  - name: nist-ssdf-derived
+    version: "1.1"
+    level: baseline
+context:
+  always:
+  - contracts
+  routes:
+    architecture_change:
+    - architecture
+    - contracts
+    code_change:
+    - implementation
+    - testing
+    - contracts
+    effectiveness_evaluation:
+    - contracts

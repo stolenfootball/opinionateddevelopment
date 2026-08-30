@@ -1,0 +1,122 @@
+name: Native release matrix
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned toolchain and SBOM generator
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup +1.97.0 target add "$TARGET"
+          cargo +1.97.0 install --locked cargo-cyclonedx --version 0.5.9
+      - name: Build and bind evidence
+        env:
+          TARGET: ${{ matrix.target }}
+          SOURCE_URI: ${{ github.server_url }}/${{ github.repository }}
+          SOURCE_REVISION: ${{ github.sha }}
+          BUILDER_ID: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cargo +1.97.0 cyclonedx --manifest-path crates/opdev-cli/Cargo.toml --format json --describe binaries --all-features --target "$TARGET" --override-filename opdev.cdx --spec-version 1.5
+          cargo +1.97.0 build --release --locked -p opdev-cli --target "$TARGET"
+          mkdir -p release-staging/plugin release-bundle
+          cp "target/$TARGET/release/opdev" release-staging/opdev
+          cp -R plugins/opdev release-staging/plugin/opdev
+          tar -C release-staging -czf "release-bundle/opdev-$TARGET.tar.gz" opdev plugin
+          cp crates/opdev-cli/opdev.cdx.json "release-bundle/opdev-$TARGET.cdx.json"
+          "target/$TARGET/release/opdev" release evidence \
+            --artifact "release-bundle/opdev-$TARGET.tar.gz" \
+            --sbom "release-bundle/opdev-$TARGET.cdx.json" \
+            --source-uri "$SOURCE_URI" \
+            --source-revision "$SOURCE_REVISION" \
+            --builder-id "$BUILDER_ID" \
+            --output release-bundle
+          (cd release-bundle && shasum -a 256 -c SHA256SUMS)
+      - name: Preserve native release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opdev-${{ matrix.target }}
+          path: release-bundle/
+          if-no-files-found: error
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned toolchain and SBOM generator
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup +1.97.0 target add $env:TARGET
+          cargo +1.97.0 install --locked cargo-cyclonedx --version 0.5.9
+      - name: Build and bind evidence
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          SOURCE_URI: ${{ github.server_url }}/${{ github.repository }}
+          SOURCE_REVISION: ${{ github.sha }}
+          BUILDER_ID: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo +1.97.0 cyclonedx --manifest-path crates/opdev-cli/Cargo.toml --format json --describe binaries --all-features --target $env:TARGET --override-filename opdev.cdx --spec-version 1.5
+          cargo +1.97.0 build --release --locked -p opdev-cli --target $env:TARGET
+          New-Item -ItemType Directory -Force -Path release-staging\plugin, release-bundle | Out-Null
+          Copy-Item "target\$env:TARGET\release\opdev.exe" release-staging\opdev.exe
+          Copy-Item plugins\opdev release-staging\plugin\opdev -Recurse
+          Compress-Archive -Path release-staging\opdev.exe, release-staging\plugin -DestinationPath "release-bundle\opdev-$env:TARGET.zip"
+          Copy-Item crates\opdev-cli\opdev.cdx.json "release-bundle\opdev-$env:TARGET.cdx.json"
+          & "target\$env:TARGET\release\opdev.exe" release evidence `
+            --artifact "release-bundle\opdev-$env:TARGET.zip" `
+            --sbom "release-bundle\opdev-$env:TARGET.cdx.json" `
+            --source-uri $env:SOURCE_URI `
+            --source-revision $env:SOURCE_REVISION `
+            --builder-id $env:BUILDER_ID `
+            --output release-bundle
+          Get-Content release-bundle\SHA256SUMS | ForEach-Object {
+            $parts = $_ -split '  ', 2
+            $actual = (Get-FileHash -Algorithm SHA256 (Join-Path release-bundle $parts[1])).Hash.ToLowerInvariant()
+            if ($actual -ne $parts[0]) { throw "Checksum mismatch for $($parts[1])" }
+          }
+      - name: Preserve native release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opdev-${{ matrix.target }}
+          path: release-bundle/
+          if-no-files-found: error

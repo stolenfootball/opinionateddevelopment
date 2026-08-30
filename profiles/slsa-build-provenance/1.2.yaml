@@ -1,0 +1,26 @@
+schema: 1
+name: slsa-build-provenance
+version: "1.2"
+title: SLSA 1.2 build provenance evidence mapping
+status: evidence_format
+claim: This profile describes SLSA provenance-compatible evidence; it makes no SLSA Build level claim because builder trust, isolation, signing, distribution, and consumer verification require separate assessment.
+source:
+  name: SLSA Build Provenance
+  version: "1.2"
+  url: https://slsa.dev/spec/v1.2/build-provenance
+requirements:
+  - id: provenance-subject
+    title: Identify build outputs by cryptographic digest
+    coverage: full
+    mapped_rules: [MCD-ARTIFACT-001, OPDEV-SUPPLY-002]
+    limitation: Digest identity alone does not authenticate who produced the artifact.
+  - id: build-definition
+    title: Record source and external build parameters
+    coverage: partial
+    mapped_rules: [MCD-PIPELINE-001, OPDEV-SUPPLY-002]
+    limitation: OpDev records supplied parameters but cannot prove that undeclared parameters did not influence the build.
+  - id: run-details
+    title: Identify the builder
+    coverage: partial
+    mapped_rules: [OPDEV-SUPPLY-001, OPDEV-SUPPLY-002]
+    limitation: A builder identifier is self-asserted unless a trusted build platform generates and signs the statement.

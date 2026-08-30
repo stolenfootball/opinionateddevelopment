@@ -1,0 +1,23 @@
+[package]
+name = "opdev-engine"
+description = "Evidence collection and rule evaluation engine for OpDev"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+command-group.workspace = true
+opdev-core = { path = "../opdev-core" }
+opdev-project = { path = "../opdev-project" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+jsonschema.workspace = true
+
+[lints]
+workspace = true
