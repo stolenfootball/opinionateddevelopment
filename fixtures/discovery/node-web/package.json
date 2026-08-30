@@ -1,0 +1,11 @@
+{
+  "name": "opdev-node-web-fixture",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "19.1.1"
+  }
+}

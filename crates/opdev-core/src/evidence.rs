@@ -31,6 +31,8 @@ pub enum VerificationSource {
     Git,
     /// Local CI configuration.
     Ci,
+    /// Project-owned, schema-validated evidence ledger.
+    Evidence,
     /// Read-only remote provider data.
     Remote,
     /// Human or agent-supplied evidence.

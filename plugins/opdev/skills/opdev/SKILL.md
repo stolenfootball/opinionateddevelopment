@@ -26,8 +26,9 @@ The Claude Code prompt hook may provide the same state as additional context. Tr
 4. Establish the outcome, scope, exclusions, acceptance conditions, risks, and evidence before substantive edits. Scale design work to risk and reversibility.
 5. Make small, reviewable changes. Preserve supported behavior unless the accepted change deliberately migrates it.
 6. Apply the testing policy in [testing.md](references/testing.md). Run canonical command argument vectors directly; do not reinterpret them through a shell.
-7. Use `opdev check` for local evidence. Use `opdev check --ci` in integration CI and `--remote` only when a read-only provider audit is relevant. Report blocked or unavailable evidence honestly.
-8. Reconcile implementation, tests, declared authorities, delivery behavior, and tracked work before completion.
+7. For facts the CLI cannot infer, follow [evidence.md](references/evidence.md). Bind change assertions to the exact staged fingerprint; never reuse an assertion after the repository state changes without rechecking it.
+8. Use `opdev check` for local evidence. Use `opdev check --ci` in integration CI and `--remote` only when a read-only provider audit is relevant. Report blocked or unavailable evidence honestly.
+9. Reconcile implementation, tests, declared authorities, delivery behavior, and tracked work before completion.
 
 Read [workflow.md](references/workflow.md) for the full lifecycle and gate behavior when planning or carrying out a substantive change.
 

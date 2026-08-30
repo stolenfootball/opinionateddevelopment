@@ -1,0 +1,21 @@
+{
+  "name": "opdev",
+  "owner": {
+    "name": "Opinionated Development contributors"
+  },
+  "description": "Evidence-driven software development plugins",
+  "version": "0.1.0",
+  "plugins": [
+    {
+      "name": "opdev",
+      "source": "./plugins/opdev",
+      "description": "Evidence-driven software development with mandatory MinimumCD rules and cross-agent continuity.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Opinionated Development contributors"
+      },
+      "category": "productivity",
+      "tags": ["software-development", "testing", "continuous-delivery", "minimumcd"]
+    }
+  ]
+}

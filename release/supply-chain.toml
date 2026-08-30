@@ -17,8 +17,14 @@ build_type = "https://opdev.dev/buildtypes/release/v1"
 algorithm = "sha256"
 checksums_file = "SHA256SUMS"
 
+[signing]
+mode = "sigstore-keyless"
+bundle_suffix = ".sigstore.json"
+oidc_issuer = "https://gitlab.com"
+identity_pattern = "https://gitlab.com/stolenfootball-tools/opinionateddevelopment//.gitlab-ci.yml@refs/tags/<tag>"
+
 [claims]
 slsa_build_level = false
 trusted_builder = false
-signed_evidence = false
-note = "The initial evidence bundle is digest-bound and SLSA-compatible, but trust and signing depend on the release platform and are not inferred."
+signed_evidence = true
+note = "Canonical tag releases sign the native archive with GitLab OIDC and Sigstore; local evidence generation remains unsigned until a release pipeline signs it."

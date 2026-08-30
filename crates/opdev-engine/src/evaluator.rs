@@ -7,8 +7,8 @@ use opdev_core::{
     embedded_catalog,
 };
 use opdev_project::{
-    CiProvider, CoverageMode, DeliveryStatus, ExtensionCheck, ExtensionStage, ProjectKind,
-    ProjectManifest, TestStage,
+    CiProvider, CoverageMode, DeliveryStatus, EVIDENCE_PATH, EvidenceAssertion, EvidenceLedger,
+    ExtensionCheck, ExtensionStage, ProjectKind, ProjectManifest, TestStage, staged_fingerprint,
 };
 use thiserror::Error;
 
@@ -54,6 +54,9 @@ pub enum EvaluationError {
     /// The embedded rule catalog is invalid.
     #[error("could not load the embedded rule catalog: {0}")]
     Catalog(#[from] opdev_core::CatalogError),
+    /// A project evidence ledger is malformed or inconsistent.
+    #[error("could not load project evidence: {0}")]
+    Evidence(#[from] opdev_project::EvidenceError),
     /// An extension request could not be encoded.
     #[error("could not encode extension request: {0}")]
     ExtensionRequest(#[from] serde_json::Error),
@@ -77,7 +80,7 @@ pub fn evaluate(
     let catalog = embedded_catalog()?;
     let evaluated_at = unix_timestamp();
     let subject = root.display().to_string();
-    let rules: Vec<_> = catalog
+    let mut rules: Vec<_> = catalog
         .rules
         .iter()
         .map(|rule| {
@@ -90,6 +93,7 @@ pub fn evaluate(
             )
         })
         .collect();
+    apply_evidence_ledger(root, &catalog, &mut rules)?;
     let checks = if options.execute_checks {
         let mut checks = run_suites(root, manifest, options.test_stage);
         checks.extend(run_extensions(root, manifest, options.extension_stage)?);
@@ -107,6 +111,56 @@ pub fn evaluate(
         checks,
         gates,
     })
+}
+
+fn apply_evidence_ledger(
+    root: &Path,
+    catalog: &RuleCatalog,
+    results: &mut [RuleResult],
+) -> Result<(), EvaluationError> {
+    let Some(ledger) = EvidenceLedger::load_optional(root, catalog)? else {
+        return Ok(());
+    };
+    let change = staged_fingerprint(root)
+        .ok()
+        .and_then(|fingerprint| ledger.matching_change(&fingerprint));
+    for result in results
+        .iter_mut()
+        .filter(|result| result.outcome == Outcome::Unverified)
+    {
+        let assertion = change
+            .and_then(|change| {
+                change
+                    .assertions
+                    .iter()
+                    .find(|assertion| assertion.rule_id == result.rule_id)
+            })
+            .or_else(|| {
+                ledger
+                    .project
+                    .iter()
+                    .find(|assertion| assertion.rule_id == result.rule_id)
+            });
+        if let Some(assertion) = assertion {
+            apply_assertion(result, assertion, change.map(|change| change.work.as_str()));
+        }
+    }
+    Ok(())
+}
+
+fn apply_assertion(result: &mut RuleResult, assertion: &EvidenceAssertion, work: Option<&str>) {
+    result.outcome = assertion.outcome;
+    result.verifier = VerificationSource::Evidence;
+    result.diagnostic = None;
+    result.evidence = vec![Evidence {
+        kind: "evidence_ledger".into(),
+        summary: work.map_or_else(
+            || assertion.summary.clone(),
+            |work| format!("{}; work: {work}", assertion.summary),
+        ),
+        location: Some(EVIDENCE_PATH.into()),
+    }];
+    result.evidence.extend(assertion.evidence.clone());
 }
 
 /// Recomputes strict gate verdicts after another verifier contributes rule

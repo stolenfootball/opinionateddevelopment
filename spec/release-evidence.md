@@ -24,6 +24,14 @@ is a claim from the caller, not proof of builder identity. The files therefore
 do not establish a SLSA Build level, trusted-builder isolation, provenance
 authenticity, secure distribution, or successful consumer verification.
 
+Canonical GitLab tag pipelines add a separate keyless Sigstore bundle for each
+native archive. The signing job receives a short-lived GitLab OIDC token with
+the `sigstore` audience, records the signing identity through Fulcio/Rekor, and
+verifies the bundle against the exact GitLab project, `.gitlab-ci.yml`, and tag
+identity before publication. This authenticates the archive at release time;
+it does not retroactively turn the CLI-generated provenance into trusted-builder
+provenance or establish a SLSA Build level.
+
 ## Rust release SBOM
 
 OpDev pins `cargo-cyclonedx` 0.5.9 with `--locked` and emits CycloneDX JSON 1.5,
@@ -43,7 +51,8 @@ The release sequence is:
 build immutable artifact
   -> generate matching CycloneDX SBOM
   -> run opdev release evidence
-  -> publish artifact + SBOM + checksums + manifest + provenance together
+  -> keyless-sign and verify the archive in canonical release CI
+  -> publish artifact + signature + SBOM + checksums + manifest + provenance together
   -> verify digests after download
 ```
 

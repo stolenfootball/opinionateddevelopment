@@ -1,0 +1,6 @@
+[project]
+name = "opdev-python-fixture"
+version = "0.1.0"
+
+[project.optional-dependencies]
+test = ["pytest==8.4.1"]

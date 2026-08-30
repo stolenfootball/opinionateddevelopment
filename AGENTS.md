@@ -1,0 +1,22 @@
+<!-- opdev:start -->
+## OpDev development protocol
+
+This repository is initialized for OpDev. Apply this protocol seamlessly to every software-development task; do not ask whether to use it. `.opdev/project.yaml` is the machine-readable project contract and the starting point for finding project-specific commands, authorities, risks, tests, delivery requirements, assurance profiles, and context routes. Do not assume that design or operational material lives in a conventional `docs/` directory.
+
+If the `opdev` CLI or required OpDev agent integration is unavailable, tell the user before substantive development begins and offer to install it. Do not silently replace OpDev with an improvised process. You may continue only when the user chooses to proceed without it or the current task does not require the unavailable capability.
+
+For each development task:
+
+1. Read `.opdev/project.yaml` before planning or editing. Load the authorities listed by `context.always` and the authorities in every route relevant to the task. Treat those sources as project facts; resolve contradictions explicitly instead of guessing.
+2. Identify the intended outcome, acceptance evidence, affected consumers, and applicable quality risks. Use the project work authority for active decisions and progress when one is declared.
+3. Keep design effort proportional to risk, reversibility, novelty, and blast radius. Record durable decisions in the declared decision or architecture authority when the project contract routes the task there.
+4. Implement in small, reviewable increments that preserve delivered behavior except where the accepted change intentionally modifies it. Integrate with the declared trunk frequently and keep branches short-lived.
+5. Add or update automated tests for behavioral changes. Add regression protection for escaped defects unless a specific justification is recorded. Exercise the suites declared for the relevant stage both before and after integration. Keep retries visible; quarantines require an owner, tracked remediation, and an expiry. Use coverage as risk evidence, not as a substitute for meaningful assertions.
+6. Run canonical commands from `commands` as argument vectors in their declared working directories. Do not reinterpret them through a shell or substitute a different command without reporting the difference. Project extensions may add checks but may not weaken, replace, or mark core requirements satisfied.
+7. When a rule needs evidence that automation cannot infer, record only reviewable facts in `.opdev/evidence.yaml`. Stage all material files, obtain the fingerprint with `opdev evidence fingerprint`, and bind change assertions to that exact staged state. Never copy forward an assertion whose evidence was not rechecked; future repository states intentionally invalidate it.
+8. Report outcomes using OpDev semantics: `passed`, `failed`, `unverified`, `not_applicable`, `error`, or `migration_required`. Only `passed` and justified `not_applicable` satisfy a required rule. Missing evidence is `unverified`, not a pass. Tooling failure is `error`, not a product failure. Do not claim a gate passed when a required rule has another outcome.
+
+MinimumCD requirements are mandatory. Every change is version controlled and delivered through CI; CI is the exclusive delivery path. Use one integration trunk, stop delivery when it is red, and restore it as the highest priority. Build a deployable artifact once, identify it immutably, and promote that same artifact rather than rebuilding. Qualify in a production-like environment when the project has runtime environments. Keep configuration versioned and tested while externalizing environment-specific values. Delivery must have a single consumer-facing path and an automated, tested recovery strategy appropriate to the software. Preserve or deliberately migrate already-delivered behavior.
+
+Before declaring work complete, reconcile implementation, tests, project authorities, delivery behavior, and tracked work. Run the applicable canonical checks and provide concise evidence, including anything not run or still requiring migration. Never hide a failing or unverified requirement behind a summary success statement.
+<!-- opdev:end -->

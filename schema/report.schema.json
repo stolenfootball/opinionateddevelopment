@@ -42,7 +42,7 @@
         "catalog_version": { "type": "integer", "minimum": 1 },
         "outcome": { "$ref": "#/$defs/outcome" },
         "subject": { "type": "string", "minLength": 1 },
-        "verifier": { "enum": ["catalog", "manifest", "command", "extension", "git", "ci", "remote", "agent"] },
+          "verifier": { "enum": ["catalog", "manifest", "command", "extension", "git", "ci", "evidence", "remote", "agent"] },
         "evaluated_at": { "type": "integer", "minimum": 0 },
         "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
         "diagnostic": { "type": "string", "minLength": 1 }

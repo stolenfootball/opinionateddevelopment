@@ -28,6 +28,11 @@ When two OpDev sources appear to conflict, use this order:
 Project contracts select applicable profiles and implementations. They cannot
 weaken a core rule or redefine a core failure as passing.
 
+Schema-validated project evidence follows [`evidence-ledger.md`](evidence-ledger.md).
+It may satisfy an otherwise unverified rule only when the catalog explicitly
+allows evidence verification; it cannot override a concrete failure, error, or
+migration requirement.
+
 ## Lifecycle
 
 OpDev uses this general lifecycle:
@@ -77,4 +82,3 @@ OpenSSF, and the public descriptions of ISO testing and quality models. OpDev
 only claims conformance to an external standard when a versioned profile
 contains every applicable requirement and the project supplies complete
 evidence. Referencing or deriving a practice is not a conformance claim.
-

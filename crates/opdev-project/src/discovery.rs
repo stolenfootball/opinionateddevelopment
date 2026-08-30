@@ -223,6 +223,12 @@ fn discover_kind(root: &Path) -> (ProjectKind, Vec<String>) {
         }
         return (ProjectKind::Generic, vec!["package.json".into()]);
     }
+    if root.join("pyproject.toml").is_file() {
+        return (ProjectKind::Library, vec!["Python project metadata".into()]);
+    }
+    if root.join("go.mod").is_file() {
+        return (ProjectKind::Library, vec!["Go module".into()]);
+    }
     if root.join("main.tf").is_file() || root.join("terraform").is_dir() {
         return (
             ProjectKind::Infrastructure,
@@ -339,16 +345,47 @@ fn discover_commands(root: &Path, evidence: &mut Vec<String>) -> BTreeMap<String
         );
     } else if root.join("package.json").is_file() {
         evidence.push("package.json canonical command inference".into());
-        commands.insert("setup".into(), command(&["npm", "ci"], 900));
-        commands.insert("check".into(), command(&["npm", "test"], 1800));
-        commands.insert("package".into(), command(&["npm", "run", "build"], 1800));
+        let package = fs::read_to_string(root.join("package.json"))
+            .ok()
+            .and_then(|source| serde_json::from_str::<serde_json::Value>(&source).ok());
+        let has_script = |name: &str| {
+            package
+                .as_ref()
+                .and_then(|value| value.get("scripts"))
+                .and_then(|scripts| scripts.get(name))
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|script| !script.trim().is_empty())
+        };
+        if root.join("package-lock.json").is_file() {
+            commands.insert("setup".into(), command(&["npm", "ci"], 900));
+        }
+        if has_script("test") {
+            commands.insert("check".into(), command(&["npm", "test"], 1800));
+        }
+        if has_script("build") {
+            commands.insert("package".into(), command(&["npm", "run", "build"], 1800));
+        }
     } else if root.join("pyproject.toml").is_file() {
         evidence.push("pyproject.toml canonical command inference".into());
-        commands.insert("check".into(), command(&["python", "-m", "pytest"], 1800));
+        let metadata = fs::read_to_string(root.join("pyproject.toml")).unwrap_or_default();
+        if metadata.contains("pytest") || root.join("tests").is_dir() {
+            commands.insert("check".into(), command(&["python", "-m", "pytest"], 1800));
+        }
     } else if root.join("go.mod").is_file() {
         evidence.push("go.mod canonical command inference".into());
         commands.insert("check".into(), command(&["go", "test", "./..."], 1800));
         commands.insert("package".into(), command(&["go", "build", "./..."], 1800));
+    } else if root.join("main.tf").is_file() || root.join("terraform").is_dir() {
+        evidence.push("Terraform canonical command inference".into());
+        commands.insert(
+            "setup".into(),
+            command(&["terraform", "init", "-backend=false"], 900),
+        );
+        commands.insert(
+            "format".into(),
+            command(&["terraform", "fmt", "-check", "-recursive"], 300),
+        );
+        commands.insert("check".into(), command(&["terraform", "validate"], 900));
     }
     commands
 }
@@ -513,6 +550,65 @@ mod tests {
                 .all(|command| !command.argv.join(" ").contains("sh -c"))
         );
         discovery.manifest.to_yaml()?;
+        Ok(())
+    }
+
+    #[test]
+    fn discovery_fixtures_cover_multiple_software_ecosystems()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fixtures = [
+            (
+                "package.json",
+                include_str!("../../../fixtures/discovery/node-web/package.json"),
+                ProjectKind::Web,
+                "check",
+            ),
+            (
+                "pyproject.toml",
+                include_str!("../../../fixtures/discovery/python-library/pyproject.toml"),
+                ProjectKind::Library,
+                "check",
+            ),
+            (
+                "go.mod",
+                include_str!("../../../fixtures/discovery/go-library/go.mod"),
+                ProjectKind::Library,
+                "package",
+            ),
+            (
+                "main.tf",
+                include_str!("../../../fixtures/discovery/terraform/main.tf"),
+                ProjectKind::Infrastructure,
+                "format",
+            ),
+        ];
+
+        for (name, content, kind, expected_command) in fixtures {
+            let directory = tempfile::tempdir()?;
+            fs::create_dir(directory.path().join(".git"))?;
+            fs::write(directory.path().join(name), content)?;
+            if name == "package.json" {
+                fs::write(directory.path().join("package-lock.json"), "{}")?;
+            }
+            let discovery = discover(directory.path())?;
+            assert_eq!(discovery.manifest.project.kind, kind);
+            assert!(discovery.manifest.commands.contains_key(expected_command));
+            discovery.manifest.to_yaml()?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn node_discovery_does_not_invent_missing_scripts() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        fs::create_dir(directory.path().join(".git"))?;
+        fs::write(
+            directory.path().join("package.json"),
+            r#"{"name":"no-scripts"}"#,
+        )?;
+        let discovery = discover(directory.path())?;
+        assert!(!discovery.manifest.commands.contains_key("check"));
+        assert!(!discovery.manifest.commands.contains_key("package"));
         Ok(())
     }
 }

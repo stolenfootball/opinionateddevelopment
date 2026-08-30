@@ -13,7 +13,7 @@ use opdev_core::{
 use opdev_engine::{CheckOptions, CheckReport, evaluate, reaggregate};
 use opdev_project::{
     CiProvider, CoverageMode, DeliveryStatus, FileChange, MANIFEST_PATH, ProjectManifest,
-    RecoveryStrategy, discover, reconcile_agent_files,
+    RecoveryStrategy, discover, reconcile_agent_files, staged_fingerprint,
 };
 use opdev_release::{EvidenceRequest, generate_evidence};
 use opdev_remote::{RemoteAudit, RemoteCapability, audit};
@@ -45,6 +45,8 @@ enum Command {
     Profiles(ProfilesArgs),
     /// Generate deterministic evidence for already-built release artifacts.
     Release(ReleaseArgs),
+    /// Prepare repository-state binding for reviewable project evidence.
+    Evidence(EvidenceArgs),
 }
 
 #[derive(Debug, Args)]
@@ -205,6 +207,25 @@ struct ReleaseEvidenceArgs {
     output: PathBuf,
 }
 
+#[derive(Debug, Args)]
+struct EvidenceArgs {
+    #[command(subcommand)]
+    command: EvidenceCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum EvidenceCommand {
+    /// Print the staged index fingerprint used by change evidence.
+    Fingerprint(EvidenceFingerprintArgs),
+}
+
+#[derive(Debug, Args)]
+struct EvidenceFingerprintArgs {
+    /// Directory inside the initialized Git repository.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+}
+
 fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(exit_code) => exit_code,
@@ -228,12 +249,23 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Rules(args) => show_rules(args).map(|()| ExitCode::SUCCESS),
         Command::Profiles(args) => show_profiles(args).map(|()| ExitCode::SUCCESS),
         Command::Release(args) => release_command(&args).map(|()| ExitCode::SUCCESS),
+        Command::Evidence(args) => evidence_command(&args).map(|()| ExitCode::SUCCESS),
         Command::Init(args) => initialize(&args).map(|()| ExitCode::SUCCESS),
         Command::Check(args) => check_project(&args),
         Command::Doctor(args) => doctor(&args).map(|()| ExitCode::SUCCESS),
         Command::Ci(args) => ci_command(&args).map(|()| ExitCode::SUCCESS),
         Command::Upgrade(args) => upgrade(&args).map(|()| ExitCode::SUCCESS),
     }
+}
+
+fn evidence_command(args: &EvidenceArgs) -> Result<()> {
+    match &args.command {
+        EvidenceCommand::Fingerprint(args) => {
+            let (root, _) = load_project(&args.root)?;
+            println!("{}", staged_fingerprint(&root)?);
+        }
+    }
+    Ok(())
 }
 
 fn release_command(args: &ReleaseArgs) -> Result<()> {
@@ -653,6 +685,33 @@ mod tests {
             vec!["opdev", "upgrade"],
             vec!["opdev", "version"],
             vec!["opdev", "rules", "--id", "MCD-TRUNK-001"],
+            vec!["opdev", "profiles"],
+            vec![
+                "opdev",
+                "profiles",
+                "--name",
+                "opdev-core",
+                "--version",
+                "1",
+            ],
+            vec!["opdev", "evidence", "fingerprint"],
+            vec![
+                "opdev",
+                "release",
+                "evidence",
+                "--artifact",
+                "opdev.tar.gz",
+                "--sbom",
+                "opdev.cdx.json",
+                "--source-uri",
+                "https://example.test/opdev",
+                "--source-revision",
+                "0123456789abcdef",
+                "--builder-id",
+                "https://example.test/builders/1",
+                "--output",
+                "release",
+            ],
         ] {
             assert!(Cli::try_parse_from(arguments).is_ok());
         }

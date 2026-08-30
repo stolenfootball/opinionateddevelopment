@@ -327,7 +327,7 @@ rules:
     statement: CI processing untrusted code or metadata MUST validate inputs, prevent access to privileged credentials, and grant only the permissions required by each task.
     applicability: CI that processes untrusted code or metadata
     gates: [integration, delivery, compliance]
-    verification: [ci, remote]
+    verification: [ci, remote, evidence]
     sources:
       - name: OpenSSF OSPS Baseline
         url: https://baseline.openssf.org/
@@ -408,4 +408,3 @@ rules:
     sources:
       - name: OpDev result semantics
         url: spec/result-semantics.md
-

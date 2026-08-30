@@ -1,93 +1,146 @@
-# OpinionatedDevelopment
+# OpDev
 
+OpDev is an evidence-driven development system for general software projects.
+It combines a Rust CLI, a strict project contract, and one shared agent plugin
+for Codex and Claude Code. The workflow is flexible about languages, frameworks,
+repository layout, and design-document location; the MinimumCD delivery rules
+remain mandatory.
 
+OpDev is currently pre-release (`0.1.0`). Its schemas and rule IDs are versioned,
+but installation and compatibility should still be evaluated before broad
+organizational rollout.
 
-## Getting started
+## What it does
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- Detects common Cargo, npm, Python, Go, infrastructure, documentation, and
+  plugin projects without executing repository-controlled discovery commands.
+- Initializes `.opdev/project.yaml` and persistent `AGENTS.md`/`CLAUDE.md`
+  guidance so fresh agents recover the project process automatically.
+- Runs canonical tests and project-owned checks through exact argument vectors,
+  with no shell interpolation, bounded output, timeouts, and process-tree cleanup.
+- Evaluates all 37 core rules with exhaustive outcomes: `passed`, `failed`,
+  `unverified`, `not_applicable`, `error`, or `migration_required`.
+- Generates and inspects first-class GitHub Actions and GitLab CI configurations.
+- Audits GitHub and GitLab policy read-only without treating inaccessible facts
+  as passing.
+- Binds reviewable change evidence to an exact staged Git fingerprint.
+- Generates SHA-256 checksums, a CycloneDX-associated release manifest, and
+  SLSA-compatible provenance without claiming a SLSA Build level.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Install
 
-## Add your files
+The CLI and agent plugin are separate on purpose: the plugin provides seamless
+agent behavior, while the CLI owns schemas, evaluation, and safe execution. If
+the plugin is present but the CLI is missing, the agent tells the developer and
+offers installation rather than silently substituting another process.
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+### CLI from source
 
+Rust 1.97 or newer is required until release archives are published:
+
+```sh
+cargo install --locked --git https://gitlab.com/stolenfootball-tools/opinionateddevelopment.git opdev-cli
+opdev version
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/stolenfootball-tools/opinionateddevelopment.git
-git branch -M main
-git push -uf origin main
+
+Tagged releases publish checksum-verified, keyless Sigstore-signed native archives through GitLab. The
+required target contract covers x86-64 and ARM64 on Windows, Linux GNU, and
+macOS; Linux musl targets are optional. A release must not claim a required
+target until its archive is actually present in that release.
+
+### Codex plugin
+
+```sh
+codex plugin marketplace add https://gitlab.com/stolenfootball-tools/opinionateddevelopment.git
+codex plugin add opdev@personal
 ```
 
-## Integrate with your tools
+Start a new Codex task after installing or updating so the shared skill is
+loaded into fresh context.
 
-* [Set up project integrations](https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/settings/integrations)
+### Claude Code plugin
 
-## Collaborate with your team
+```sh
+claude plugin marketplace add https://gitlab.com/stolenfootball-tools/opinionateddevelopment.git
+claude plugin install opdev@opdev
+```
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+Restart Claude Code or reload plugins after installation. For local development,
+`claude --plugin-dir ./plugins/opdev` loads the plugin directly.
 
-## Test and Deploy
+## Use
 
-Use the built-in continuous integration in GitLab.
+When an installed agent detects a software-development request:
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+- if `.opdev/project.yaml` exists, it applies OpDev without interrupting the
+  developer;
+- if the CLI exists but the repository is uninitialized, it asks whether to run
+  initialization; and
+- if the CLI is missing, it explains that and offers installation.
 
-***
+Manual initialization is also available:
 
-# Editing this README
+```sh
+opdev init --dry-run
+opdev init
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Review the inferred contract, especially `migration_required` delivery and
+recovery fields. OpDev deliberately does not invent an artifact, production-like
+environment, or recovery strategy.
 
-## Suggestions for a good README
+Typical commands are:
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```sh
+opdev check
+opdev check --ci --format json
+opdev doctor --remote
+opdev ci inspect
+opdev ci generate --provider gitlab
+opdev rules --id MCD-TRUNK-001
+opdev profiles
+```
 
-## Name
-Choose a self-explaining name for your project.
+For evidence that automation cannot infer, stage every material change and run:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+```sh
+opdev evidence fingerprint
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+Bind reviewed assertions to that value in `.opdev/evidence.yaml`. Future file,
+mode, or content changes produce a different fingerprint and invalidate the
+change assertions. See [`spec/evidence-ledger.md`](spec/evidence-ledger.md).
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+## Design boundaries
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+- `.opdev/project.yaml` is the small machine-readable project contract; it points
+  to existing project authorities instead of forcing content into `docs/`.
+- `AGENTS.md` is intentionally detailed for reliable recovery by fresh agents.
+  `CLAUDE.md` imports it with `@AGENTS.md`, leaving one managed source of behavior.
+- Built-in extensions are declarative. Project command checks use shell-free
+  argument vectors and a strict JSON protocol. Native dynamic libraries and a
+  general policy language are outside version 1.
+- GitHub and GitLab are first-class adapters behind public Rust traits. Unknown
+  providers remain unverified until an adapter supplies evidence.
+- Assurance profiles are exact-version mappings. Selecting a NIST, OpenSSF,
+  SLSA, or CycloneDX profile is not a certification or conformance claim.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+The normative sources are [`rules/core.yaml`](rules/core.yaml) and
+[`spec/README.md`](spec/README.md). Result semantics are defined in
+[`spec/result-semantics.md`](spec/result-semantics.md).
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+## Development
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo build --release --locked
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+The repository dogfoods OpDev through `.opdev/project.yaml`, GitLab CI, and a
+GitHub mirror workflow. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for change and
+evidence expectations, and [`SECURITY.md`](SECURITY.md) for private vulnerability
+reporting.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Licensed under Apache-2.0.
