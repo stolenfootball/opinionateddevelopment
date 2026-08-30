@@ -7,8 +7,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use opdev_core::{EXTENSION_PROTOCOL_VERSION, PROJECT_SCHEMA_VERSION, RuleId, embedded_catalog};
 use opdev_project::{
-    CiProvider, CoverageMode, DeliveryStatus, MANIFEST_PATH, ProjectManifest, RecoveryStrategy,
-    discover,
+    CiProvider, CoverageMode, DeliveryStatus, FileChange, MANIFEST_PATH, ProjectManifest,
+    RecoveryStrategy, discover, reconcile_agent_files,
 };
 
 #[derive(Debug, Parser)]
@@ -27,7 +27,7 @@ enum Command {
     /// Explain missing, contradictory, or unverified capabilities.
     Doctor(DoctorArgs),
     /// Upgrade project-owned `OpDev` files explicitly.
-    Upgrade,
+    Upgrade(UpgradeArgs),
     /// Show CLI and protocol versions.
     Version,
     /// Inspect the embedded normative rule catalog.
@@ -68,6 +68,13 @@ struct DoctorArgs {
 }
 
 #[derive(Debug, Args)]
+struct UpgradeArgs {
+    /// Directory inside the initialized Git repository.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+}
+
+#[derive(Debug, Args)]
 struct RulesArgs {
     /// Show one stable rule ID instead of listing the catalog.
     #[arg(long)]
@@ -98,7 +105,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Init(args) => initialize(&args),
         Command::Check(args) => check_project(&args),
         Command::Doctor(args) => doctor(&args),
-        Command::Upgrade => not_implemented("upgrade", "Phase 4"),
+        Command::Upgrade(args) => upgrade(&args),
     }
 }
 
@@ -109,6 +116,7 @@ fn initialize(args: &InitArgs) -> Result<()> {
     if manifest_path.exists() {
         ProjectManifest::load(&manifest_path)
             .context("the existing project contract is invalid")?;
+        report_agent_changes(&reconcile_agent_files(&discovery.root)?);
         println!(
             "OpDev is already initialized at {}",
             manifest_path.display()
@@ -127,12 +135,32 @@ fn initialize(args: &InitArgs) -> Result<()> {
         print!("{}", discovery.manifest.to_yaml()?);
     } else {
         discovery.manifest.write_new(&manifest_path)?;
+        report_agent_changes(&reconcile_agent_files(&discovery.root)?);
         println!("Initialized OpDev at {}", manifest_path.display());
         println!(
             "Review migration_required and unconfigured values before enforcing delivery gates."
         );
     }
     Ok(())
+}
+
+fn upgrade(args: &UpgradeArgs) -> Result<()> {
+    let (root, _) = load_project(&args.root)?;
+    let changes = reconcile_agent_files(&root)?;
+    report_agent_changes(&changes);
+    println!("OpDev project-owned guidance is current.");
+    Ok(())
+}
+
+fn report_agent_changes(changes: &[opdev_project::ManagedFile]) {
+    for file in changes {
+        let action = match file.change {
+            FileChange::Created => "created",
+            FileChange::Updated => "updated",
+            FileChange::Unchanged => "unchanged",
+        };
+        println!("{action} {}", file.path.display());
+    }
 }
 
 fn check_project(args: &CheckArgs) -> Result<()> {
@@ -214,10 +242,6 @@ fn show_rules(args: RulesArgs) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn not_implemented(command: &str, phase: &str) -> Result<()> {
-    bail!("`opdev {command}` is reserved for {phase} and is not implemented in this build")
 }
 
 #[cfg(test)]

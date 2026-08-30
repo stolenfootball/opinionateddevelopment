@@ -2,9 +2,11 @@
 
 #![forbid(unsafe_code)]
 
+mod bootstrap;
 mod discovery;
 mod manifest;
 
+pub use bootstrap::{BootstrapError, FileChange, ManagedFile, reconcile_agent_files};
 pub use discovery::{Discovery, DiscoveryError, discover};
 pub use manifest::{
     Artifact, Assurance, AuthorityKind, AuthorityRef, ChangeTests, CiConfig, CiProvider,
