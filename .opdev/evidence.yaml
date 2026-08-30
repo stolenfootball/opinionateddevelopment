@@ -31,7 +31,7 @@ project:
         summary: GitHub change CI declares read-only contents permission and uses full-SHA pinned actions.
         location: .github/workflows/opdev.yml
 changes:
-  - fingerprint: 5009be9126727db41d869efd203b5350e2b6e83663a74a24e16e603301481d04
+  - fingerprint: b524c3cc5d8a0185c86110d10014ef92f15a1ebaf7fecc1d55e6f99090b5c77c
     work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
     assertions:
       - rule_id: OPDEV-WORK-001
@@ -110,7 +110,7 @@ changes:
             location: .opdev/project.yaml
       - rule_id: OPDEV-LEARN-001
         outcome: passed
-        summary: Dogfooding exposed permanently blocked CI from missing human evidence, which was generalized into a bound evidence capability and regression tests.
+        summary: Dogfooding exposed both stale human-evidence reuse and an invalid pinned SBOM-generator invocation; each finding was reproduced and corrected before final release.
         evidence:
           - kind: decision
             summary: The generalized failure, alternatives, selected design, limitation, and reversal trigger are documented.
@@ -118,3 +118,6 @@ changes:
           - kind: test
             summary: Tests verify ledger schemas, satisfying-only claims, exact fingerprint reuse, exclusion of only the ledger, and fail-closed unindexed content.
             location: crates/opdev-project/src/evidence.rs
+          - kind: ci
+            summary: The first protected release candidate stopped before publication when cargo-cyclonedx rejected incompatible flags; the exact 0.5.9 generator was then run locally to confirm its output contract.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2803657849
