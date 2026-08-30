@@ -89,7 +89,7 @@ jobs:
             test -f plugin-smoke/plugins/opdev/skills/opdev/SKILL.md
           fi
       - name: Preserve the immutable archive
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: ${{ matrix.artifact }}
           path: source/release-artifacts/*
@@ -157,7 +157,7 @@ jobs:
           & .\package-smoke\opdev.exe version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Preserve the immutable archive
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: ${{ matrix.artifact }}
           path: source/release-artifacts/*
@@ -213,7 +213,7 @@ jobs:
           tar -xzf "release-artifacts/$archive" -C package-smoke
           package-smoke/opdev version | grep -F "opdev ${OPDEV_VERSION}"
       - name: Preserve the immutable archive
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: ${{ matrix.artifact }}
           path: source/release-artifacts/*

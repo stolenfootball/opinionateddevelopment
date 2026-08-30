@@ -31,7 +31,7 @@ project:
         summary: GitHub change CI declares read-only contents permission and uses full-SHA pinned actions.
         location: .github/workflows/opdev.yml
 changes:
-  - fingerprint: 64825ba39bdc08a4eb4ab7176bf68c29641e5548c4de823f31c614c94c474cd0
+  - fingerprint: 5009be9126727db41d869efd203b5350e2b6e83663a74a24e16e603301481d04
     work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/10
     assertions:
       - rule_id: OPDEV-WORK-001
@@ -95,6 +95,9 @@ changes:
           - kind: test
             summary: Canonical format, Clippy, test, release-build, deterministic package smoke, GitLab lint, and both plugin validation commands all complete successfully.
             location: .opdev/project.yaml
+          - kind: ci
+            summary: Native x86-64 and ARM64 archives for Windows, Linux GNU, and macOS were reproducibly packaged and smoke-tested on their declared GitHub runners.
+            location: https://github.com/stolenfootball/opinionateddevelopment/actions/runs/33329402980
       - rule_id: OPDEV-AI-001
         outcome: passed
         summary: Agent-authored implementation is evaluated by the same strict compiler, linter, tests, schemas, CI linter, and evidence rules as any contribution.
