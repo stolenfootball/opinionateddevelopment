@@ -23,7 +23,13 @@ jobs:
           cargo +1.97.0 clippy --workspace --all-targets --all-features -- -D warnings
           cargo +1.97.0 test --workspace --all-features
           cargo +1.97.0 build --locked -p opdev-cli
-          ./target/debug/opdev check --ci --format json > opdev-report.json
+          report_file="$(mktemp)"
+          set +e
+          ./target/debug/opdev check --ci --format json > "$report_file"
+          opdev_status=$?
+          set -e
+          mv "$report_file" opdev-report.json
+          exit "$opdev_status"
       - name: Preserve OpDev evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

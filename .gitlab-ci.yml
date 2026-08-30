@@ -22,7 +22,14 @@ quality:
     - cargo clippy --workspace --all-targets --all-features -- -D warnings
     - cargo test --workspace --all-features
     - cargo build --locked -p opdev-cli
-    - ./target/debug/opdev check --ci --format json > opdev-report.json
+    - |
+      report_file="$(mktemp)"
+      set +e
+      ./target/debug/opdev check --ci --format json > "$report_file"
+      opdev_status=$?
+      set -e
+      mv "$report_file" opdev-report.json
+      exit "$opdev_status"
   artifacts:
     when: always
     paths:
