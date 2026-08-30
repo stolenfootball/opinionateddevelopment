@@ -1,0 +1,66 @@
+schema = 1
+
+[[target]]
+triple = "x86_64-pc-windows-msvc"
+os = "windows"
+arch = "x86_64"
+tier = 1
+required = true
+archive = "zip"
+
+[[target]]
+triple = "aarch64-pc-windows-msvc"
+os = "windows"
+arch = "aarch64"
+tier = 1
+required = true
+archive = "zip"
+
+[[target]]
+triple = "x86_64-unknown-linux-gnu"
+os = "linux"
+arch = "x86_64"
+tier = 1
+required = true
+archive = "tar.gz"
+
+[[target]]
+triple = "aarch64-unknown-linux-gnu"
+os = "linux"
+arch = "aarch64"
+tier = 1
+required = true
+archive = "tar.gz"
+
+[[target]]
+triple = "x86_64-apple-darwin"
+os = "macos"
+arch = "x86_64"
+tier = 2
+required = true
+archive = "tar.gz"
+
+[[target]]
+triple = "aarch64-apple-darwin"
+os = "macos"
+arch = "aarch64"
+tier = 1
+required = true
+archive = "tar.gz"
+
+[[target]]
+triple = "x86_64-unknown-linux-musl"
+os = "linux"
+arch = "x86_64"
+tier = 2
+required = false
+archive = "tar.gz"
+
+[[target]]
+triple = "aarch64-unknown-linux-musl"
+os = "linux"
+arch = "aarch64"
+tier = 2
+required = false
+archive = "tar.gz"
+

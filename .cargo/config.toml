@@ -1,0 +1,5 @@
+[alias]
+opdev-check = "check --workspace --all-targets"
+opdev-clippy = "clippy --workspace --all-targets --all-features -- -D warnings"
+opdev-test = "test --workspace --all-features"
+
