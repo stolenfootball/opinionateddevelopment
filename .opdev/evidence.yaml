@@ -295,3 +295,78 @@ changes:
           - kind: test
             summary: The regression suite prevents both incorrect archive names and checkout-local installer outputs from returning silently.
             location: crates/opdev-ci/src/lib.rs
+  - fingerprint: 4bfeb346b8abbea857b527dbad1cbb81ba54c7a75b15d352abb0755155bbc764
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/12
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: Issue 12 defines the observed libc and missing-toolchain failures plus representative multi-ecosystem acceptance.
+        evidence:
+          - kind: work
+            summary: The canary report records failures in Alpine and Debian, the missing Git prerequisite, and the need to compose with project setup.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/12
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: The provider contract separates the OpDev runtime from project toolchain selection without adding a second project configuration schema.
+        evidence:
+          - kind: specification
+            summary: GitLab image inference, explicit override behavior, prerequisites, and the current glibc floor are recorded as durable provider policy.
+            location: spec/ci-providers.md
+          - kind: research
+            summary: Rust documents static musl linkage, GitLab defines the job-image boundary, and official toolchain images document Debian variants and bundled common tools.
+            location: https://doc.rust-lang.org/reference/linkage.html
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The issue branch originated from current main and is scoped to the generated GitLab runtime contract.
+        evidence:
+          - kind: git
+            summary: The short-lived codex/issue-12-gitlab-runtime branch is a direct descendant of main.
+            location: codex/issue-12-gitlab-runtime
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: Issue 12 implementation and integration are being completed within one working day.
+        evidence:
+          - kind: git
+            summary: The branch contains one bounded provider-runtime increment ready for immediate integration.
+            location: codex/issue-12-gitlab-runtime
+      - rule_id: MCD-FLOW-001
+        outcome: not_applicable
+        summary: The required trunk pipeline was green when issue 12 work began.
+        evidence:
+          - kind: remote
+            summary: Main pipeline 21 passed before this implementation branch was created.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2804160001
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: GitHub generation is unchanged, GitLab still installs the published GNU archive, and custom project images remain selectable explicitly.
+        evidence:
+          - kind: test
+            summary: Provider rendering, parsing, inspection, installer isolation, and CLI surface tests pass across the workspace.
+            location: crates/opdev-ci/src/lib.rs
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: Runtime compatibility, toolchain selection, refusal to guess, and two representative ecosystems have executable coverage.
+        evidence:
+          - kind: test
+            summary: Unit tests cover Rust, Go, Node.js, and Python inference plus missing metadata, while the opt-in Docker test runs the published installer and real Rust and Go project tests.
+            location: crates/opdev-ci/src/lib.rs
+          - kind: test
+            summary: The full workspace formatter, strict Clippy suite, and all-feature tests pass on Rust 1.97.0.
+            location: .opdev/project.yaml
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: Agent-authored runtime and template changes are accepted only after the repository's canonical checks, evidence binding, and CI review.
+        evidence:
+          - kind: policy
+            summary: The initialized repository protocol requires canonical checks and evidence-backed integration.
+            location: AGENTS.md
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: The canary runtime failures were converted into fail-closed image selection and a repeatable multi-ecosystem container regression.
+        evidence:
+          - kind: work
+            summary: Issue 12 preserves the Alpine, glibc, Git, and project-toolchain findings from the disposable canaries.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/12
+          - kind: test
+            summary: The opt-in Docker test executes the rendered installer against the immutable 0.1.0 release in exact Rust and Go toolchain images and runs representative project tests.
+            location: crates/opdev-ci/src/lib.rs

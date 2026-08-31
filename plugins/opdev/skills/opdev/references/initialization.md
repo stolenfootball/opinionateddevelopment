@@ -9,7 +9,7 @@ After consent:
 1. Run `opdev init --dry-run` and show material inferences and migration gaps.
 2. If the proposal is reasonable, run `opdev init`.
 3. Review `.opdev/project.yaml` with the user where delivery, recovery, coverage, or project kind remains uncertain.
-4. Do not overwrite an existing CI configuration. Use `opdev ci generate --provider github|gitlab` for review, then repeat with `--write` only after approval.
+4. Do not overwrite an existing CI configuration. Use `opdev ci generate --provider github|gitlab` for review, then repeat with `--write` only after approval. GitLab generation infers an official image from exact project toolchain metadata; for mixed or custom stacks, review and pass `--image` explicitly. Never accept an image guess that does not contain the project's canonical command toolchain.
 
 Initialization creates `.opdev/project.yaml` and managed sections in `AGENTS.md` and `CLAUDE.md`. It preserves content outside OpDev markers. `opdev upgrade` refreshes only managed guidance.
 

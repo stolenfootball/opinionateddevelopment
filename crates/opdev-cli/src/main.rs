@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use opdev_ci::{Capability, TemplateContext, adapter_for, write_new};
+use opdev_ci::{Capability, TemplateContext, adapter_for, infer_gitlab_image, write_new};
 use opdev_core::{
     AggregateVerdict, EXTENSION_PROTOCOL_VERSION, Gate, Outcome, PROJECT_SCHEMA_VERSION, RuleId,
     embedded_catalog, embedded_profiles, resolve_profile,
@@ -112,6 +112,9 @@ struct CiGenerateArgs {
     /// Exact `OpDev` release used by CI.
     #[arg(long, default_value = env!("CARGO_PKG_VERSION"))]
     opdev_version: String,
+    /// GitLab job image; inferred from exact project toolchain metadata when omitted.
+    #[arg(long)]
+    image: Option<String>,
     /// Create the provider file; otherwise print it to standard output.
     #[arg(long)]
     write: bool,
@@ -440,10 +443,20 @@ fn ci_command(args: &CiArgs) -> Result<()> {
 
 fn generate_ci(args: &CiGenerateArgs) -> Result<()> {
     let discovery = discover(&args.root).context("could not inspect the repository")?;
-    let adapter = adapter_for(args.provider.into())?;
+    let provider: CiProvider = args.provider.into();
+    let adapter = adapter_for(provider)?;
+    let job_image = match (provider, &args.image) {
+        (CiProvider::Gitlab, Some(image)) => Some(image.clone()),
+        (CiProvider::Gitlab, None) => Some(infer_gitlab_image(&discovery.root)?),
+        (CiProvider::Github, Some(_)) => {
+            bail!("`--image` is supported only when generating GitLab CI")
+        }
+        _ => None,
+    };
     let context = TemplateContext {
         opdev_version: args.opdev_version.clone(),
         trunk: discovery.manifest.project.trunk,
+        job_image,
     };
     if args.write {
         let path = write_new(adapter, &discovery.root, &context)?;
@@ -759,6 +772,15 @@ mod tests {
             vec!["opdev", "check", "--no-exec", "--format", "json"],
             vec!["opdev", "doctor", "--remote"],
             vec!["opdev", "ci", "generate", "--provider", "gitlab"],
+            vec![
+                "opdev",
+                "ci",
+                "generate",
+                "--provider",
+                "gitlab",
+                "--image",
+                "example.test/toolchain:1",
+            ],
             vec!["opdev", "ci", "inspect"],
             vec!["opdev", "upgrade"],
             vec!["opdev", "version"],

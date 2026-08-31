@@ -190,6 +190,21 @@ opdev ci generate --provider gitlab --write
 # Or: opdev ci generate --provider github --write
 ```
 
+For GitLab, OpDev infers an official toolchain image when the repository pins
+Rust (`rust-toolchain.toml` or `rust-toolchain`), Go (`go.mod`), Node.js
+(`.nvmrc` or `.node-version`), or Python (`.python-version`). Mixed or custom
+stacks can select a reviewed image explicitly:
+
+```sh
+opdev ci generate --provider gitlab --image registry.example.com/team/toolchain:2026.08 --write
+```
+
+The image must contain the project toolchain plus a POSIX shell, Git, curl,
+tar, `sha256sum`, and `mktemp`. OpDev refuses to guess when it cannot infer a
+compatible image. The generated job verifies these prerequisites, downloads
+and checksum-verifies the exact OpDev release outside the checkout, confirms
+that the CLI starts, and then evaluates the project contract.
+
 Generation refuses to replace an existing provider configuration. Review and
 commit the generated file like any other build-system change.
 
