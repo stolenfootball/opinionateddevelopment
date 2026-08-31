@@ -19,6 +19,8 @@ pub struct TemplateContext {
     pub opdev_version: String,
     /// Declared integration trunk.
     pub trunk: String,
+    /// Provider job image. Required by GitLab and unused by GitHub.
+    pub job_image: Option<String>,
 }
 
 /// Result for one locally inspectable CI capability.
@@ -54,6 +56,11 @@ pub enum CiError {
     /// A template value would be unsafe or ambiguous.
     #[error("invalid CI template value: {0}")]
     InvalidTemplateValue(String),
+    /// No project-owned toolchain version could select a compatible GitLab image.
+    #[error(
+        "could not infer a GitLab toolchain image from {0}; add a supported toolchain version file or pass `--image`"
+    )]
+    ImageInference(PathBuf),
     /// A CI file could not be read.
     #[error("could not read CI configuration `{path}`: {source}")]
     Read {
@@ -179,7 +186,17 @@ impl CiAdapter for GitlabAdapter {
     }
 
     fn render(&self, context: &TemplateContext) -> Result<String, CiError> {
-        render_template(GITLAB_TEMPLATE, context)
+        let image = context.job_image.as_deref().ok_or_else(|| {
+            CiError::InvalidTemplateValue("GitLab generation requires a job image".into())
+        })?;
+        if image.trim().is_empty() || image.contains(['\r', '\n']) {
+            return Err(CiError::InvalidTemplateValue(
+                "job image must be non-empty and single-line".into(),
+            ));
+        }
+        let image = serde_json::to_string(image)
+            .map_err(|error| CiError::InvalidTemplateValue(error.to_string()))?;
+        Ok(render_template(GITLAB_TEMPLATE, context)?.replace("{{IMAGE_JSON}}", &image))
     }
 
     fn inspect(&self, root: &Path) -> Result<CiInspection, CiError> {
@@ -220,6 +237,88 @@ fn valid_version(value: &str) -> bool {
         && value
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || ".+-".contains(character))
+}
+
+/// Infers a glibc-compatible official toolchain image from project-owned
+/// version metadata. Mixed or custom stacks use the CLI's explicit `--image`
+/// override rather than a silent guess.
+///
+/// # Errors
+///
+/// Returns [`CiError::ImageInference`] when no supported, exact toolchain
+/// version is present.
+pub fn infer_gitlab_image(root: &Path) -> Result<String, CiError> {
+    if root.join("Cargo.toml").is_file()
+        && let Some(version) = rust_version(root)
+    {
+        return Ok(format!("rust:{version}-trixie"));
+    }
+    if root.join("go.mod").is_file()
+        && let Some(version) = go_version(root)
+    {
+        return Ok(format!("golang:{version}-trixie"));
+    }
+    if root.join("package.json").is_file()
+        && let Some(version) = first_version_file(root, &[".nvmrc", ".node-version"])
+    {
+        return Ok(format!("node:{version}-trixie"));
+    }
+    if root.join("pyproject.toml").is_file()
+        && let Some(version) = first_version_file(root, &[".python-version"])
+    {
+        return Ok(format!("python:{version}-trixie"));
+    }
+    Err(CiError::ImageInference(root.to_path_buf()))
+}
+
+fn rust_version(root: &Path) -> Option<String> {
+    let toml = fs::read_to_string(root.join("rust-toolchain.toml")).ok();
+    if let Some(version) = toml.as_deref().and_then(|source| {
+        source.lines().find_map(|line| {
+            let (name, value) = line.split_once('=')?;
+            (name.trim() == "channel").then(|| value.trim().trim_matches(['\'', '"']))
+        })
+    }) && valid_toolchain_version(version)
+    {
+        return Some(version.to_owned());
+    }
+    first_version_file(root, &["rust-toolchain"])
+}
+
+fn go_version(root: &Path) -> Option<String> {
+    let source = fs::read_to_string(root.join("go.mod")).ok()?;
+    let mut language_version = None;
+    for line in source.lines() {
+        let mut fields = line.split_whitespace();
+        match (fields.next(), fields.next()) {
+            (Some("toolchain"), Some(version)) => {
+                let version = version.strip_prefix("go").unwrap_or(version);
+                if valid_toolchain_version(version) {
+                    return Some(version.to_owned());
+                }
+            }
+            (Some("go"), Some(version)) if valid_toolchain_version(version) => {
+                language_version = Some(version.to_owned());
+            }
+            _ => {}
+        }
+    }
+    language_version
+}
+
+fn first_version_file(root: &Path, names: &[&str]) -> Option<String> {
+    names.iter().find_map(|name| {
+        let version = fs::read_to_string(root.join(name)).ok()?;
+        let version = version.trim().trim_start_matches('v');
+        valid_toolchain_version(version).then(|| version.to_owned())
+    })
+}
+
+fn valid_toolchain_version(value: &str) -> bool {
+    !value.is_empty()
+        && value.split('.').all(|segment| {
+            !segment.is_empty() && segment.chars().all(|character| character.is_ascii_digit())
+        })
 }
 
 struct ProviderRequirements {
@@ -324,13 +423,13 @@ mod tests {
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
-    #[cfg(unix)]
     use std::process::Command;
 
     fn context() -> TemplateContext {
         TemplateContext {
             opdev_version: "0.1.0".into(),
             trunk: "main".into(),
+            job_image: Some("rust:1.97.0-trixie".into()),
         }
     }
 
@@ -378,9 +477,111 @@ mod tests {
         assert!(
             gitlab.contains("archive=\"opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz\"")
         );
+        assert!(gitlab.contains("image: \"rust:1.97.0-trixie\""));
         assert!(gitlab.contains("install_dir=\"$(mktemp -d)\""));
         assert!(gitlab.contains("--output \"$install_dir/$archive\""));
         assert!(!gitlab.contains("--output \"$archive\""));
+        Ok(())
+    }
+
+    #[test]
+    fn gitlab_images_are_inferred_from_exact_project_toolchains()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let rust = tempfile::tempdir()?;
+        fs::write(
+            rust.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\n",
+        )?;
+        fs::write(
+            rust.path().join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"1.97.0\"\n",
+        )?;
+        assert_eq!(infer_gitlab_image(rust.path())?, "rust:1.97.0-trixie");
+
+        let go = tempfile::tempdir()?;
+        fs::write(
+            go.path().join("go.mod"),
+            "module example.test/fixture\n\ngo 1.25\ntoolchain go1.25.1\n",
+        )?;
+        assert_eq!(infer_gitlab_image(go.path())?, "golang:1.25.1-trixie");
+
+        let node = tempfile::tempdir()?;
+        fs::write(node.path().join("package.json"), "{}\n")?;
+        fs::write(node.path().join(".nvmrc"), "v24.4.1\n")?;
+        assert_eq!(infer_gitlab_image(node.path())?, "node:24.4.1-trixie");
+
+        let python = tempfile::tempdir()?;
+        fs::write(
+            python.path().join("pyproject.toml"),
+            "[project]\nname = \"fixture\"\n",
+        )?;
+        fs::write(python.path().join(".python-version"), "3.14.0\n")?;
+        assert_eq!(infer_gitlab_image(python.path())?, "python:3.14.0-trixie");
+        Ok(())
+    }
+
+    #[test]
+    fn gitlab_image_inference_refuses_to_guess() -> Result<(), Box<dyn std::error::Error>> {
+        let project = tempfile::tempdir()?;
+        fs::write(project.path().join("package.json"), "{}\n")?;
+        assert!(matches!(
+            infer_gitlab_image(project.path()),
+            Err(CiError::ImageInference(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires Docker and network access to the published OpDev release"]
+    fn rendered_gitlab_installer_runs_with_rust_and_go_toolchains()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for (image, toolchain_check) in [
+            (
+                "rust:1.97.0-trixie",
+                "fixture=$(mktemp -d) && cd \"$fixture\" && mkdir src && printf '[package]\\nname = \"fixture\"\\nversion = \"0.1.0\"\\nedition = \"2024\"\\n' > Cargo.toml && printf '#[test]\\nfn passes() { assert_eq!(2 + 2, 4); }\\n' > src/lib.rs && cargo test",
+            ),
+            (
+                "golang:1.25.1-trixie",
+                "fixture=$(mktemp -d) && cd \"$fixture\" && go mod init example.test/fixture && printf 'package fixture\\n\\nimport \"testing\"\\n\\nfunc TestPasses(t *testing.T) {}\\n' > fixture_test.go && go test ./...",
+            ),
+        ] {
+            let mut context = context();
+            context.job_image = Some(image.into());
+            let rendered = adapter_for(CiProvider::Gitlab)?.render(&context)?;
+            let parsed: serde_json::Value = serde_saphyr::from_str(&rendered)?;
+            let mut script = parsed["opdev"]["before_script"]
+                .as_array()
+                .ok_or_else(|| std::io::Error::other("before_script is not an array"))?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .ok_or_else(|| std::io::Error::other("before_script entry is not a string"))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .join("\n");
+            script.push('\n');
+            script.push_str(toolchain_check);
+
+            let output = Command::new("docker")
+                .args([
+                    "run",
+                    "--rm",
+                    "--env",
+                    "OPDEV_VERSION=0.1.0",
+                    image,
+                    "sh",
+                    "-c",
+                    &script,
+                ])
+                .output()?;
+            assert!(
+                output.status.success(),
+                "rendered GitLab installer failed in {image}: stdout={} stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         Ok(())
     }
 
