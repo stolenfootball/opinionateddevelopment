@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::env;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use opdev_core::{Evidence, Outcome};
@@ -66,8 +67,9 @@ pub enum RemoteError {
 /// provider API requests.
 ///
 /// Authentication is optional. GitHub reads `OPDEV_GITHUB_TOKEN`,
-/// `GITHUB_TOKEN`, then `GH_TOKEN`; GitLab reads `OPDEV_GITLAB_TOKEN`,
-/// `GITLAB_TOKEN`, then `GLAB_TOKEN`. Tokens are never included in evidence.
+/// `GITHUB_TOKEN`, then `GH_TOKEN`. GitLab uses the credential precedence
+/// documented in `spec/remote-audits.md`, including an authenticated `glab`
+/// fallback. Tokens are never included in evidence or diagnostics.
 ///
 /// # Errors
 ///
@@ -254,9 +256,11 @@ fn audit_gitlab(client: &Client, repository: &Repository, trunk: &str) -> Remote
     let slug = repository.slug();
     let encoded_slug = encode(&slug);
     let base = format!("https://gitlab.com/api/v4/projects/{encoded_slug}");
-    let token = first_env(&["OPDEV_GITLAB_TOKEN", "GITLAB_TOKEN", "GLAB_TOKEN"]);
-    let project =
-        get_json::<GitlabProject>(gitlab_request(client.get(&base), token.as_deref()), &base);
+    let credential = gitlab_credential();
+    let project = get_json::<GitlabProject>(
+        gitlab_request(client.get(&base), credential.as_ref()),
+        &base,
+    );
     let Ok(project) = project else {
         return unverified_audit(&slug, project.err().as_deref());
     };
@@ -270,7 +274,7 @@ fn audit_gitlab(client: &Client, repository: &Repository, trunk: &str) -> Remote
         encode(trunk)
     );
     let protection = get_json::<GitlabProtectedBranch>(
-        gitlab_request(client.get(&protection_url), token.as_deref()),
+        gitlab_request(client.get(&protection_url), credential.as_ref()),
         &protection_url,
     );
     let pipeline_url = format!(
@@ -279,7 +283,7 @@ fn audit_gitlab(client: &Client, repository: &Repository, trunk: &str) -> Remote
         encode(trunk)
     );
     let pipelines = get_json::<Vec<GitlabPipeline>>(
-        gitlab_request(client.get(&pipeline_url), token.as_deref()),
+        gitlab_request(client.get(&pipeline_url), credential.as_ref()),
         &pipeline_url,
     );
     let (ci, pipeline) = match pipelines {
@@ -345,12 +349,69 @@ fn github_request(request: RequestBuilder, token: Option<&str>) -> RequestBuilde
     }
 }
 
-fn gitlab_request(request: RequestBuilder, token: Option<&str>) -> RequestBuilder {
-    if let Some(token) = token {
-        request.header("PRIVATE-TOKEN", token)
-    } else {
-        request
+fn gitlab_request(
+    request: RequestBuilder,
+    credential: Option<&GitlabCredential>,
+) -> RequestBuilder {
+    match credential {
+        Some(credential) if credential.scheme == GitlabAuthScheme::Bearer => {
+            request.bearer_auth(&credential.secret)
+        }
+        Some(credential) => request.header("PRIVATE-TOKEN", &credential.secret),
+        None => request,
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GitlabAuthScheme {
+    Bearer,
+    PrivateToken,
+}
+
+struct GitlabCredential {
+    scheme: GitlabAuthScheme,
+    secret: String,
+}
+
+fn gitlab_credential() -> Option<GitlabCredential> {
+    gitlab_credential_with(|name| env::var(name).ok(), glab_token)
+}
+
+fn gitlab_credential_with<F, G>(mut environment: F, glab: G) -> Option<GitlabCredential>
+where
+    F: FnMut(&str) -> Option<String>,
+    G: FnOnce() -> Option<String>,
+{
+    for (name, scheme) in [
+        ("OPDEV_GITLAB_OAUTH_TOKEN", GitlabAuthScheme::Bearer),
+        ("OPDEV_GITLAB_PRIVATE_TOKEN", GitlabAuthScheme::PrivateToken),
+        ("OPDEV_GITLAB_TOKEN", GitlabAuthScheme::Bearer),
+        ("GITLAB_TOKEN", GitlabAuthScheme::Bearer),
+        ("GLAB_TOKEN", GitlabAuthScheme::Bearer),
+    ] {
+        if let Some(secret) = environment(name).filter(|value| !value.trim().is_empty()) {
+            return Some(GitlabCredential { scheme, secret });
+        }
+    }
+    glab().map(|secret| GitlabCredential {
+        scheme: GitlabAuthScheme::Bearer,
+        secret,
+    })
+}
+
+fn glab_token() -> Option<String> {
+    let output = Command::new("glab")
+        .args(["config", "get", "token", "--host", "gitlab.com"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let token = String::from_utf8(output.stdout).ok()?;
+    let token = token.trim();
+    (!token.is_empty()).then(|| token.to_owned())
 }
 
 fn get_json<T: DeserializeOwned>(request: RequestBuilder, location: &str) -> Result<T, String> {
@@ -485,6 +546,13 @@ fn encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc::{self, Receiver};
+    use std::thread::JoinHandle;
+
+    type MockServer = (String, Receiver<String>, JoinHandle<Result<(), String>>);
 
     #[test]
     fn parses_first_class_https_and_ssh_remotes() -> Result<(), Box<dyn std::error::Error>> {
@@ -537,5 +605,154 @@ mod tests {
     #[test]
     fn gitlab_project_ids_encode_nested_namespaces() {
         assert_eq!(encode("group/sub/project"), "group%2Fsub%2Fproject");
+    }
+
+    #[test]
+    fn gitlab_credential_precedence_is_deterministic() -> Result<(), Box<dyn std::error::Error>> {
+        let values = BTreeMap::from([
+            ("OPDEV_GITLAB_OAUTH_TOKEN", "oauth"),
+            ("OPDEV_GITLAB_PRIVATE_TOKEN", "private"),
+            ("OPDEV_GITLAB_TOKEN", "generic"),
+            ("GITLAB_TOKEN", "gitlab"),
+            ("GLAB_TOKEN", "glab-env"),
+        ]);
+        let selected = gitlab_credential_with(
+            |name| values.get(name).map(ToString::to_string),
+            || Some("glab-store".into()),
+        )
+        .ok_or("a credential should be selected")?;
+        assert!(selected.scheme == GitlabAuthScheme::Bearer);
+        assert_eq!(selected.secret, "oauth");
+
+        let selected = gitlab_credential_with(
+            |name| (name == "OPDEV_GITLAB_PRIVATE_TOKEN").then(|| "private".into()),
+            || Some("glab-store".into()),
+        )
+        .ok_or("the private credential should be selected")?;
+        assert!(selected.scheme == GitlabAuthScheme::PrivateToken);
+
+        let selected = gitlab_credential_with(|_| None, || Some("glab-store".into()))
+            .ok_or("the glab fallback should be selected")?;
+        assert!(selected.scheme == GitlabAuthScheme::Bearer);
+        assert_eq!(selected.secret, "glab-store");
+        Ok(())
+    }
+
+    #[test]
+    fn gitlab_mock_accepts_bearer_and_private_token_headers()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let client = test_client()?;
+        for (scheme, expected, absent) in [
+            (
+                GitlabAuthScheme::Bearer,
+                "authorization: Bearer bearer-fixture",
+                "private-token:",
+            ),
+            (
+                GitlabAuthScheme::PrivateToken,
+                "private-token: private-fixture",
+                "authorization:",
+            ),
+        ] {
+            let secret = match scheme {
+                GitlabAuthScheme::Bearer => "bearer-fixture",
+                GitlabAuthScheme::PrivateToken => "private-fixture",
+            };
+            let (url, request, server) = mock_response(200, "{}")?;
+            let credential = GitlabCredential {
+                scheme,
+                secret: secret.into(),
+            };
+            let _: BTreeMap<String, String> =
+                get_json(gitlab_request(client.get(&url), Some(&credential)), &url)?;
+            let request = request.recv()?;
+            server.join().map_err(|_| "mock server panicked")??;
+            let request_lower = request.to_ascii_lowercase();
+            assert!(request_lower.contains(&expected.to_ascii_lowercase()));
+            assert!(!request_lower.contains(absent));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn gitlab_unauthorized_response_fails_closed_without_disclosing_token()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let client = test_client()?;
+        let (url, request, server) = mock_response(401, r#"{"message":"401 Unauthorized"}"#)?;
+        let credential = GitlabCredential {
+            scheme: GitlabAuthScheme::Bearer,
+            secret: "never-log-this-fixture".into(),
+        };
+        let Err(error) = get_json::<BTreeMap<String, String>>(
+            gitlab_request(client.get(&url), Some(&credential)),
+            &url,
+        ) else {
+            return Err("401 unexpectedly produced remote evidence".into());
+        };
+        let request = request.recv()?;
+        server.join().map_err(|_| "mock server panicked")??;
+        assert!(request.contains("never-log-this-fixture"));
+        assert!(error.contains("HTTP 401"));
+        assert!(!error.contains("never-log-this-fixture"));
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires OPDEV_TEST_GITLAB_PRIVATE_REMOTE and an authenticated glab session"]
+    fn live_private_gitlab_audit_uses_glab_oauth() -> Result<(), Box<dyn std::error::Error>> {
+        let remote = std::env::var("OPDEV_TEST_GITLAB_PRIVATE_REMOTE")?;
+        let manifest_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.opdev/project.yaml");
+        let mut manifest = opdev_project::ProjectManifest::load(&manifest_path)?;
+        manifest.project.ci.provider = CiProvider::Gitlab;
+        manifest.project.ci.remote = Some(remote);
+        manifest.project.trunk = "main".into();
+
+        let result = audit(&manifest)?;
+        assert_eq!(result.trunk.outcome, Outcome::Passed);
+        assert!(!result.repository.is_empty());
+        Ok(())
+    }
+
+    fn mock_response(status: u16, body: &'static str) -> Result<MockServer, std::io::Error> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let address = listener.local_addr()?;
+        let (sender, receiver) = mpsc::channel();
+        let server = std::thread::spawn(move || -> Result<(), String> {
+            let (mut stream, _) = listener
+                .accept()
+                .map_err(|error| format!("mock request could not connect: {error}"))?;
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            loop {
+                let read = stream
+                    .read(&mut buffer)
+                    .map_err(|error| format!("mock request could not read: {error}"))?;
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            sender
+                .send(String::from_utf8_lossy(&request).into_owned())
+                .map_err(|error| format!("test could not receive mock request: {error}"))?;
+            let reason = if status == 200 { "OK" } else { "Unauthorized" };
+            write!(
+                stream,
+                "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .map_err(|error| format!("mock response could not write: {error}"))?;
+            Ok(())
+        });
+        Ok((format!("http://{address}/api/v4/project"), receiver, server))
+    }
+
+    fn test_client() -> Result<Client, reqwest::Error> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        Client::builder().build()
     }
 }
