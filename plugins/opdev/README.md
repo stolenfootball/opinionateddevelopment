@@ -17,3 +17,7 @@ claude plugin install opdev@opdev
 
 Start a fresh Codex task or reload Claude Code plugins after installation. CLI
 installation and release packaging are described at the repository root.
+
+The plugin declares its supported CLI range in `opdev-compatibility.json`.
+Claude's prompt hook and the shared skill run `opdev plugin verify` before OpDev
+is activated; missing, malformed, and incompatible contracts fail closed.

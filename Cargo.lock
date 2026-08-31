@@ -1090,7 +1090,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "opdev-ci"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "opdev-core",
  "opdev-project",
@@ -1102,7 +1102,7 @@ dependencies = [
 
 [[package]]
 name = "opdev-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1112,13 +1112,15 @@ dependencies = [
  "opdev-project",
  "opdev-release",
  "opdev-remote",
+ "semver",
+ "serde",
  "serde_json",
  "tempfile",
 ]
 
 [[package]]
 name = "opdev-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jsonschema",
  "serde",
@@ -1129,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "opdev-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "command-group",
  "jsonschema",
@@ -1143,7 +1145,7 @@ dependencies = [
 
 [[package]]
 name = "opdev-project"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jsonschema",
  "opdev-core",
@@ -1157,7 +1159,7 @@ dependencies = [
 
 [[package]]
 name = "opdev-release"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flate2",
  "jsonschema",
@@ -1172,7 +1174,7 @@ dependencies = [
 
 [[package]]
 name = "opdev-remote"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "opdev-core",
  "opdev-project",
@@ -1543,6 +1545,10 @@ name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+dependencies = [
+ "serde",
+ "serde_core",
+]
 
 [[package]]
 name = "serde"

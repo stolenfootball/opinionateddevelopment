@@ -5,8 +5,11 @@ OpDev versions four public contracts independently.
 ## CLI and plugin release
 
 The CLI and agent plugins use semantic versions. A published plugin declares the
-CLI version range it supports. Installation verifies this relationship before
-activating the plugin.
+CLI version range it supports in packaged `opdev-compatibility.json`. The shared
+plugin skill verifies this relationship before its first OpDev action in each
+task. Claude Code also verifies it through the prompt hook. A missing, malformed,
+unsupported, or unsatisfied compatibility contract prevents OpDev activation;
+Codex plugin installation itself does not provide a portable activation hook.
 
 Pre-1.0 releases may change command-line and plugin behavior between minor
 versions, but migrations and diagnostics are still required for project-owned

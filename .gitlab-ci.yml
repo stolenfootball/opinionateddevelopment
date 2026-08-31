@@ -6,10 +6,11 @@ stages:
 
 variables:
   CARGO_TERM_COLOR: always
-  OPDEV_VERSION: "0.1.0"
+  OPDEV_VERSION: "0.1.1"
   RUST_IMAGE: rust:1.97.0-bookworm
   RUST_VERSION: "1.97.0"
   RUSTUP_VERSION: "1.29.0"
+  CLAUDE_CODE_VERSION: "2.1.251"
   OPDEV_USE_GITLAB_HOSTED_RELEASE_RUNNERS: "false"
 
 workflow:
@@ -44,6 +45,21 @@ quality:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_TAG'
 
+plugin-validation:
+  stage: verify
+  image: node:24.13.0-bookworm-slim
+  before_script:
+    - apt-get update
+    - apt-get install --yes --no-install-recommends python3
+    - rm -rf /var/lib/apt/lists/*
+  script:
+    - python3 scripts/validate_codex_plugin.py plugins/opdev
+    - npx --yes @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} plugin validate --strict plugins/opdev
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
 .release-package-rules:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -61,7 +77,7 @@ quality:
 package-linux-x86_64:
   stage: package
   image: rust:1.97.0-bookworm
-  needs: [quality]
+  needs: [quality, plugin-validation]
   tags: [linux, docker, proxmox]
   script:
     - cargo build --release --locked -p opdev-cli --target x86_64-unknown-linux-gnu
@@ -76,6 +92,8 @@ package-linux-x86_64:
     - test -f plugin-smoke/.agents/plugins/marketplace.json
     - test -f plugin-smoke/.claude-plugin/marketplace.json
     - test -f plugin-smoke/plugins/opdev/skills/opdev/SKILL.md
+    - test -f plugin-smoke/plugins/opdev/opdev-compatibility.json
+    - package-smoke/opdev plugin verify --contract plugin-smoke/plugins/opdev/opdev-compatibility.json
   artifacts:
     paths:
       - release-artifacts/
@@ -85,7 +103,7 @@ package-linux-x86_64:
 package-linux-aarch64:
   stage: package
   image: rust:1.97.0-bookworm
-  needs: [quality]
+  needs: [quality, plugin-validation]
   tags: [saas-linux-small-arm64]
   script:
     - cargo build --release --locked -p opdev-cli --target aarch64-unknown-linux-gnu
@@ -105,7 +123,7 @@ package-linux-aarch64:
 
 package-windows:
   stage: package
-  needs: [quality]
+  needs: [quality, plugin-validation]
   tags: [saas-windows-medium-amd64]
   script:
     - |
@@ -174,7 +192,7 @@ package-windows:
 
 package-macos:
   stage: package
-  needs: [quality]
+  needs: [quality, plugin-validation]
   tags: [saas-macos-medium-m1]
   image: macos-15-xcode-16
   variables:
@@ -221,7 +239,7 @@ package-macos:
 fetch-cross-platform-packages:
   stage: package
   image: rust:1.97.0-bookworm
-  needs: [quality]
+  needs: [quality, plugin-validation]
   tags: [linux, docker, proxmox]
   before_script:
     - apt-get update
@@ -232,7 +250,18 @@ fetch-cross-platform-packages:
       set -eu
       source_ref="gitlab-release/${CI_COMMIT_TAG}"
       authenticated_remote="https://x-access-token:${GH_OPDEV_RELEASE_TOKEN}@github.com/stolenfootball/opinionateddevelopment.git"
-      GIT_TERMINAL_PROMPT=0 git push "$authenticated_remote" "${CI_COMMIT_SHA}:refs/heads/${source_ref}"
+      cleanup_source_ref() {
+        curl --fail --silent --show-error --request DELETE \
+          --header "Authorization: Bearer ${GH_OPDEV_RELEASE_TOKEN}" \
+          --header "Accept: application/vnd.github+json" \
+          --header "X-GitHub-Api-Version: 2022-11-28" \
+          "https://api.github.com/repos/stolenfootball/opinionateddevelopment/git/refs/heads/${source_ref}" \
+          >/dev/null || true
+      }
+      trap cleanup_source_ref EXIT
+      GIT_TERMINAL_PROMPT=0 git push "$authenticated_remote" \
+        "${CI_COMMIT_SHA}:refs/heads/main" \
+        "${CI_COMMIT_SHA}:refs/heads/${source_ref}"
 
       dispatch_body="$(jq -n \
         --arg ref main \

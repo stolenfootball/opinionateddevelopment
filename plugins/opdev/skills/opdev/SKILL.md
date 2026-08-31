@@ -11,6 +11,8 @@ Apply one evidence-driven development loop across software of any language, arch
 
 At the start of a software-development task, look for `.opdev/project.yaml` at the Git repository root.
 
+Before the first OpDev action in each task, determine whether the CLI is available. If it is, resolve `../../opdev-compatibility.json` relative to this `SKILL.md` and run `opdev plugin verify --contract <absolute-path>`. A zero exit activates the plugin for the task. Exit 1 means the installed CLI is incompatible: stop applying OpDev, report both versions, and offer installation of a compatible CLI. Exit 2 means the contract could not be verified: report the error and do not claim OpDev is active. Claude Code's prompt hook performs the same check early, but this step remains required so the shared skill fails closed on every agent.
+
 - If it exists, OpDev is initialized. Read it before planning or editing and apply this skill without asking the user whether to use OpDev.
 - If it does not exist and the user is clearly asking to develop software, determine whether the `opdev` CLI is available. If it is, ask whether the user wants to initialize OpDev in this project. Do not initialize until they agree.
 - If the CLI is unavailable, tell the user that OpDev is not installed and offer the installation choices in [initialization.md](references/initialization.md). Do not install it without consent.

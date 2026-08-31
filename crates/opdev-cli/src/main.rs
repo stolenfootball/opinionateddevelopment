@@ -21,6 +21,8 @@ use opdev_release::{
     package_release,
 };
 use opdev_remote::{RemoteAudit, RemoteCapability, audit};
+use semver::{Version, VersionReq};
+use serde::Deserialize;
 
 #[derive(Debug, Parser)]
 #[command(name = "opdev", version, about = "Evidence-driven software delivery")]
@@ -51,6 +53,48 @@ enum Command {
     Release(ReleaseArgs),
     /// Prepare repository-state binding for reviewable project evidence.
     Evidence(EvidenceArgs),
+    /// Verify compatibility between an installed agent plugin and this CLI.
+    Plugin(PluginArgs),
+}
+
+#[derive(Debug, Args)]
+struct PluginArgs {
+    #[command(subcommand)]
+    command: PluginCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum PluginCommand {
+    /// Verify a packaged plugin compatibility contract against this CLI.
+    Verify(PluginVerifyArgs),
+}
+
+#[derive(Debug, Args)]
+struct PluginVerifyArgs {
+    /// Packaged `opdev-compatibility.json` contract.
+    #[arg(long)]
+    contract: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginCompatibility {
+    schema: u32,
+    plugin: PluginIdentity,
+    requires: PluginRequirements,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginIdentity {
+    name: String,
+    version: Version,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginRequirements {
+    cli: VersionReq,
 }
 
 #[derive(Debug, Args)]
@@ -308,11 +352,61 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Profiles(args) => show_profiles(args).map(|()| ExitCode::SUCCESS),
         Command::Release(args) => release_command(&args).map(|()| ExitCode::SUCCESS),
         Command::Evidence(args) => evidence_command(&args).map(|()| ExitCode::SUCCESS),
+        Command::Plugin(args) => plugin_command(&args),
         Command::Init(args) => initialize(&args).map(|()| ExitCode::SUCCESS),
         Command::Check(args) => check_project(&args),
         Command::Doctor(args) => doctor(&args).map(|()| ExitCode::SUCCESS),
         Command::Ci(args) => ci_command(&args).map(|()| ExitCode::SUCCESS),
         Command::Upgrade(args) => upgrade(&args).map(|()| ExitCode::SUCCESS),
+    }
+}
+
+fn plugin_command(args: &PluginArgs) -> Result<ExitCode> {
+    match &args.command {
+        PluginCommand::Verify(args) => verify_plugin_compatibility(args),
+    }
+}
+
+fn verify_plugin_compatibility(args: &PluginVerifyArgs) -> Result<ExitCode> {
+    let source = std::fs::read_to_string(&args.contract).with_context(|| {
+        format!(
+            "could not read plugin compatibility contract {}",
+            args.contract.display()
+        )
+    })?;
+    let contract: PluginCompatibility = serde_json::from_str(&source).with_context(|| {
+        format!(
+            "invalid plugin compatibility contract {}",
+            args.contract.display()
+        )
+    })?;
+    if contract.schema != 1 {
+        bail!(
+            "unsupported plugin compatibility schema {}; this CLI supports schema 1",
+            contract.schema
+        );
+    }
+    if contract.plugin.name != "opdev" {
+        bail!(
+            "compatibility contract names plugin `{}`; expected `opdev`",
+            contract.plugin.name
+        );
+    }
+
+    let cli_version = Version::parse(env!("CARGO_PKG_VERSION"))
+        .context("the compiled CLI version is not valid SemVer")?;
+    if contract.requires.cli.matches(&cli_version) {
+        println!(
+            "opdev plugin {} is compatible with CLI {} ({})",
+            contract.plugin.version, cli_version, contract.requires.cli
+        );
+        Ok(ExitCode::SUCCESS)
+    } else {
+        eprintln!(
+            "opdev plugin {} requires CLI {}; installed CLI is {}",
+            contract.plugin.version, contract.requires.cli, cli_version
+        );
+        Ok(ExitCode::from(1))
     }
 }
 
@@ -896,6 +990,13 @@ mod tests {
             vec!["opdev", "ci", "inspect"],
             vec!["opdev", "upgrade"],
             vec!["opdev", "version"],
+            vec![
+                "opdev",
+                "plugin",
+                "verify",
+                "--contract",
+                "opdev-compatibility.json",
+            ],
             vec!["opdev", "rules", "--id", "MCD-TRUNK-001"],
             vec!["opdev", "profiles"],
             vec![
@@ -962,11 +1063,48 @@ mod tests {
         let codex_plugin: serde_json::Value = serde_json::from_str(include_str!(
             "../../../plugins/opdev/.codex-plugin/plugin.json"
         ))?;
+        let compatibility: PluginCompatibility = serde_json::from_str(include_str!(
+            "../../../plugins/opdev/opdev-compatibility.json"
+        ))?;
 
         assert_eq!(claude_marketplace["version"], expected);
         assert_eq!(claude_marketplace["plugins"][0]["version"], expected);
         assert_eq!(claude_plugin["version"], expected);
         assert_eq!(codex_plugin["version"], expected);
+        assert_eq!(compatibility.plugin.version.to_string(), expected);
+        assert!(
+            compatibility
+                .requires
+                .cli
+                .matches(&Version::parse(expected)?)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn plugin_compatibility_is_fail_closed() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let contract = directory.path().join("compatibility.json");
+        std::fs::write(
+            &contract,
+            r#"{"schema":1,"plugin":{"name":"opdev","version":"99.0.0"},"requires":{"cli":">=99.0.0, <100.0.0"}}"#,
+        )?;
+
+        assert_eq!(
+            verify_plugin_compatibility(&PluginVerifyArgs {
+                contract: contract.clone()
+            })?,
+            ExitCode::from(1)
+        );
+
+        std::fs::write(
+            &contract,
+            r#"{"schema":2,"plugin":{"name":"opdev","version":"0.1.1"},"requires":{"cli":">=0.1.1, <0.2.0"}}"#,
+        )?;
+        assert!(
+            verify_plugin_compatibility(&PluginVerifyArgs { contract }).is_err(),
+            "unknown compatibility schemas must not activate"
+        );
         Ok(())
     }
 

@@ -8,7 +8,7 @@ frameworks, repository layout, work tracking, and design-document location
 project-specific while enforcing the delivery rules from
 [MinimumCD](https://minimumcd.org/) and strict, fail-closed evidence semantics.
 
-**Project status:** OpDev `0.1.0` is the initial release line. Its public
+**Project status:** OpDev `0.1.1` is the current release line. Its public
 compatibility boundary is pre-1.0, while rule IDs, schemas, and assurance
 profiles are independently versioned so changes remain explicit and reviewable.
 
@@ -63,7 +63,7 @@ without interruption; an uninitialized software project prompts before running
 ### 1. Install the CLI
 
 Download the archive for your system from the
-[v0.1.0 release](https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0),
+[v0.1.1 release](https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.1),
 verify it as described in [`release/README.md`](release/README.md), and place the
 `opdev` executable on `PATH`.
 
@@ -71,7 +71,7 @@ Linux x86-64 example:
 
 ```sh
 curl --fail --location --output opdev.tar.gz \
-  https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0/downloads/opdev-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+  https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.1/downloads/opdev-0.1.1-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf opdev.tar.gz
 install -m 0755 opdev "$HOME/.local/bin/opdev"
 opdev version
@@ -81,7 +81,7 @@ Windows x86-64 example:
 
 ```powershell
 Invoke-WebRequest `
-  https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.0/downloads/opdev-0.1.0-x86_64-pc-windows-msvc.zip `
+  https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/releases/v0.1.1/downloads/opdev-0.1.1-x86_64-pc-windows-msvc.zip `
   -OutFile opdev.zip
 Expand-Archive opdev.zip -DestinationPath opdev
 .\opdev\opdev.exe version
@@ -122,6 +122,11 @@ claude plugin install opdev@opdev
 
 Restart Claude Code or reload its plugins after installation. Plugin developers
 can load this checkout directly with `claude --plugin-dir ./plugins/opdev`.
+
+On its first use in a task, the plugin verifies the installed CLI against its
+packaged semantic-version compatibility contract. An incompatible or invalid
+combination stops OpDev and offers a compatible CLI installation instead of
+silently continuing.
 
 ### 3. Initialize a repository
 
@@ -231,7 +236,7 @@ reports or diagnostics.
 
 ## Rules, results, and gates
 
-OpDev `0.1.0` evaluates 37 core OpDev and MinimumCD rules. Every applicable rule
+OpDev `0.1.1` evaluates 37 core OpDev and MinimumCD rules. Every applicable rule
 has exactly one result: `passed`, `failed`, `unverified`, `not_applicable`,
 `error`, or `migration_required`. Only `passed` and justified
 `not_applicable` satisfy a required rule.

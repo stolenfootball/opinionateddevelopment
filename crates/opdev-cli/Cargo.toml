@@ -20,6 +20,8 @@ opdev-engine = { path = "../opdev-engine" }
 opdev-project = { path = "../opdev-project" }
 opdev-release = { path = "../opdev-release" }
 opdev-remote = { path = "../opdev-remote" }
+semver.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
