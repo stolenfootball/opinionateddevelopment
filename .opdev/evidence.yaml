@@ -370,3 +370,78 @@ changes:
           - kind: test
             summary: The opt-in Docker test executes the rendered installer against the immutable 0.1.0 release in exact Rust and Go toolchain images and runs representative project tests.
             location: crates/opdev-ci/src/lib.rs
+  - fingerprint: 41f8881c5a3d7e8a53b09dc80c01455e384019d60f25880321ce78d1561d0a5c
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/13
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: Issue 13 defines the Windows npm failure, supported package-manager family, security constraint, and integration acceptance.
+        evidence:
+          - kind: work
+            summary: The canary report identifies direct npm success, OpDev's missing-program result, the Windows .cmd boundary, and required regression coverage.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/13
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: Windows shim handling preserves exact argv semantics and narrows batch resolution to known package-manager names and executable extensions.
+        evidence:
+          - kind: policy
+            summary: The security boundary records allowlisted names, PATH and PATHEXT behavior, excluded associations, constrained Rust batch handling, and remaining project-code trust.
+            location: SECURITY.md
+          - kind: research
+            summary: Rust documents constrained batch-file escaping and rejection of unsafe arguments, while Microsoft documents PATHEXT lookup and the batch interpreter requirement.
+            location: https://doc.rust-lang.org/std/process/index.html#batch-file-special-handling
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The issue branch originated from current main and is scoped to Windows command resolution.
+        evidence:
+          - kind: git
+            summary: The short-lived codex/issue-13-windows-shims branch is a direct descendant of main.
+            location: codex/issue-13-windows-shims
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: Issue 13 implementation and integration are being completed within one working day.
+        evidence:
+          - kind: git
+            summary: The branch contains one bounded Windows execution increment ready for immediate integration.
+            location: codex/issue-13-windows-shims
+      - rule_id: MCD-FLOW-001
+        outcome: not_applicable
+        summary: The required trunk pipeline was green when issue 13 work began.
+        evidence:
+          - kind: remote
+            summary: Main pipeline 23 passed before this implementation branch was created.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2804189454
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: Non-Windows command execution is unchanged and Windows native executables retain direct process behavior.
+        evidence:
+          - kind: test
+            summary: The full cross-platform workspace suite passes, and resolver behavior is compiled only for Windows.
+            location: crates/opdev-engine/src/command.rs
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: The defect, supported aliases, search constraints, installed shims, and shell-injection boundary have automated Windows coverage.
+        evidence:
+          - kind: test
+            summary: An initialized package.json fixture runs its inferred npm test successfully through the canonical command engine.
+            location: crates/opdev-engine/src/command.rs
+          - kind: test
+            summary: Resolver tests cover npm, npx, pnpm, pnpx, yarn, and yarnpkg, and an injection-shaped argument cannot create its shell marker.
+            location: crates/opdev-engine/src/command.rs
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: Agent-authored process-boundary changes are accepted only after canonical checks, concrete Windows regression tests, evidence binding, and CI review.
+        evidence:
+          - kind: policy
+            summary: The initialized repository protocol requires canonical checks and evidence-backed integration.
+            location: AGENTS.md
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: The Node canary failure was generalized into a narrow Windows execution boundary rather than a global shell fallback.
+        evidence:
+          - kind: work
+            summary: Issue 13 preserves the observed Windows npm failure after disposable canary cleanup.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/13
+          - kind: test
+            summary: The regression suite proves the real initialized npm workflow and rejects both unallowlisted and association-based shim resolution.
+            location: crates/opdev-engine/src/command.rs

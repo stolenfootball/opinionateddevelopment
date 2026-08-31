@@ -281,11 +281,11 @@ available through `opdev check --format json`; CI mode uses
 ## Security and trust boundaries
 
 OpDev treats initialized project content as untrusted. Discovery is static,
-configured checks use exact argument vectors without a shell, command output and
-runtime are bounded, remote audits are read-only, and extensions cannot weaken
-core results. Running a project's configured checks still executes code selected
-by that project, so review `.opdev/project.yaml` before checking an untrusted
-repository.
+configured checks use exact argument vectors without a general-purpose shell,
+command output and runtime are bounded, remote audits are read-only, and
+extensions cannot weaken core results. Running a project's configured checks
+still executes code selected by that project, so review `.opdev/project.yaml`
+before checking an untrusted repository.
 
 Report suspected vulnerabilities privately as described in
 [`SECURITY.md`](SECURITY.md).
