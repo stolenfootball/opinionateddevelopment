@@ -87,6 +87,8 @@ jobs:
             test -f plugin-smoke/.agents/plugins/marketplace.json
             test -f plugin-smoke/.claude-plugin/marketplace.json
             test -f plugin-smoke/plugins/opdev/skills/opdev/SKILL.md
+            test -f plugin-smoke/plugins/opdev/opdev-compatibility.json
+            package-smoke/opdev plugin verify --contract plugin-smoke/plugins/opdev/opdev-compatibility.json
           fi
       - name: Preserve the immutable archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -66,7 +66,10 @@ in native or production-like GitHub-hosted runner environments:
   latter under Rosetta).
 
 The plugin distribution is packaged independently of the native CLI archives
-and validated for both Codex and Claude Code. A target is supported only when
+and validated for both Codex and Claude Code. Source validation uses the
+repository's versioned Codex ingestion-contract validator and Claude Code's
+pinned strict plugin validator. Package smoke tests then verify the bundled
+compatibility contract against the exact CLI artifact. A target is supported only when
 its archive, checksum, signature bundle, SBOM association, manifest, and
 provenance are published together by the canonical tag pipeline.
 

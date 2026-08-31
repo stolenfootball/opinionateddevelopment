@@ -763,3 +763,77 @@ changes:
           - kind: test
             summary: Both generated provider scripts now enforce the same temporary-output and status-preservation behavior.
             location: crates/opdev-ci/src/lib.rs
+  - fingerprint: bd10f6619ced5ff261dabeb6a739644d79a6231f91933b8dcc088fbd8a20a6ac
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/19
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: Issue 19 defines the v0.1.1 roll-forward outcome, compatibility and validator acceptance, candidate qualification, exclusions, and final publication evidence.
+        evidence:
+          - kind: work
+            summary: The tracked release issue records every required completion and explicitly leaves repository deletion to the user.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/19
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: The compatibility boundary and GitHub build-mirror lifecycle are recorded in the normative compatibility and release authorities.
+        evidence:
+          - kind: specification
+            summary: The plugin declares a packaged SemVer range and both agents fail closed before applying an incompatible plugin.
+            location: spec/compatibility.md
+          - kind: policy
+            summary: GitLab remains the sole source and publisher while the protected tag pipeline synchronizes and cleans the GitHub build handoff.
+            location: release/README.md
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The release-completion branch was created directly from green main and is limited to the v0.1.1 compatibility, validation, documentation, and delivery increment.
+        evidence:
+          - kind: git
+            summary: codex/issue-19-v0.1.1-release is a short-lived descendant of main at c534367.
+            location: codex/issue-19-v0.1.1-release
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: Audit, implementation, local qualification, and integration are being completed in one bounded release cycle.
+        evidence:
+          - kind: git
+            summary: The branch contains one cohesive release-completion change prepared for immediate merge-request integration.
+            location: codex/issue-19-v0.1.1-release
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: Existing CLI, project, provider, release, and plugin behavior remains covered while incompatible plugin and CLI combinations now fail closed.
+        evidence:
+          - kind: test
+            summary: All existing workspace tests pass alongside compatible, incompatible, and unsupported compatibility-contract regressions.
+            location: crates/opdev-cli/src/main.rs
+          - kind: validation
+            summary: The source plugin and a locally packaged plugin archive pass the Codex and strict Claude Code validators.
+            location: plugins/opdev
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: Issue 19 acceptance maps to canonical suites, compatibility regressions, plugin validators, hook execution, package smoke, and protected RC and final pipelines.
+        evidence:
+          - kind: test
+            summary: Format, Clippy, all workspace tests, release build, packaged-contract verification, and Claude hook execution pass locally.
+            location: .opdev/project.yaml
+          - kind: ci
+            summary: Plugin validation is a required predecessor of release packaging, and package smoke verifies the exact bundled contract with the exact CLI artifact.
+            location: .gitlab-ci.yml
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: Agent-authored release changes remain subject to the same compiler, linter, regression, compatibility, plugin-schema, evidence, and provider gates as other contributions.
+        evidence:
+          - kind: policy
+            summary: Initialized-repository guidance requires canonical commands and reviewable fingerprint-bound evidence before integration.
+            location: AGENTS.md
+          - kind: validation
+            summary: Independent Codex and Claude plugin validators accept the agent-authored shared distribution.
+            location: plugins/opdev
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: The completion audit converted a stale published release, an unenforced compatibility promise, and manual validator checks into a general roll-forward and automated release contract.
+        evidence:
+          - kind: work
+            summary: Issue 19 preserves the audited gaps and their release-level acceptance criteria.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/19
+          - kind: test
+            summary: Compatibility and validation failures now block activation or release packaging rather than relying on a remembered manual checklist.
+            location: crates/opdev-cli/src/main.rs
