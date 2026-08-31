@@ -204,7 +204,10 @@ opdev ci generate --provider gitlab --write
 For GitLab, OpDev infers an official toolchain image when the repository pins
 Rust (`rust-toolchain.toml` or `rust-toolchain`), Go (`go.mod`), Node.js
 (`.nvmrc` or `.node-version`), or Python (`.python-version`). Mixed or custom
-stacks can select a reviewed image explicitly:
+stacks can select a reviewed image explicitly. Go's module directives identify
+a minimum or preferred toolchain, so generated CI uses the matching
+major-minor Docker Official Image family rather than assuming that an
+historical patch-specific Debian tag exists:
 
 ```sh
 opdev ci generate --provider gitlab --image registry.example.com/team/toolchain:2026.08 --write

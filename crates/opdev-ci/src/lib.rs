@@ -245,8 +245,8 @@ fn valid_version(value: &str) -> bool {
 ///
 /// # Errors
 ///
-/// Returns [`CiError::ImageInference`] when no supported, exact toolchain
-/// version is present.
+/// Returns [`CiError::ImageInference`] when no supported numeric toolchain or
+/// language-family version is present.
 pub fn infer_gitlab_image(root: &Path) -> Result<String, CiError> {
     if root.join("Cargo.toml").is_file()
         && let Some(version) = rust_version(root)
@@ -293,17 +293,31 @@ fn go_version(root: &Path) -> Option<String> {
         match (fields.next(), fields.next()) {
             (Some("toolchain"), Some(version)) => {
                 let version = version.strip_prefix("go").unwrap_or(version);
-                if valid_toolchain_version(version) {
-                    return Some(version.to_owned());
+                if let Some(family) = go_language_family(version) {
+                    return Some(family);
                 }
             }
-            (Some("go"), Some(version)) if valid_toolchain_version(version) => {
-                language_version = Some(version.to_owned());
+            (Some("go"), Some(version)) => {
+                language_version = go_language_family(version);
             }
             _ => {}
         }
     }
     language_version
+}
+
+fn go_language_family(version: &str) -> Option<String> {
+    let mut segments = version.split('.');
+    let major = segments.next()?;
+    let minor = segments.next()?;
+    if ![major, minor].iter().all(|segment| {
+        !segment.is_empty() && segment.chars().all(|character| character.is_ascii_digit())
+    }) || !segments.all(|segment| {
+        !segment.is_empty() && segment.chars().all(|character| character.is_ascii_digit())
+    }) {
+        return None;
+    }
+    Some(format!("{major}.{minor}"))
 }
 
 fn first_version_file(root: &Path, names: &[&str]) -> Option<String> {
@@ -485,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn gitlab_images_are_inferred_from_exact_project_toolchains()
+    fn gitlab_images_are_inferred_from_project_version_metadata()
     -> Result<(), Box<dyn std::error::Error>> {
         let rust = tempfile::tempdir()?;
         fs::write(
@@ -503,7 +517,14 @@ mod tests {
             go.path().join("go.mod"),
             "module example.test/fixture\n\ngo 1.25\ntoolchain go1.25.1\n",
         )?;
-        assert_eq!(infer_gitlab_image(go.path())?, "golang:1.25.1-trixie");
+        assert_eq!(infer_gitlab_image(go.path())?, "golang:1.25-trixie");
+
+        let go_minimum = tempfile::tempdir()?;
+        fs::write(
+            go_minimum.path().join("go.mod"),
+            "module example.test/fixture\n\ngo 1.24.0\n",
+        )?;
+        assert_eq!(infer_gitlab_image(go_minimum.path())?, "golang:1.24-trixie");
 
         let node = tempfile::tempdir()?;
         fs::write(node.path().join("package.json"), "{}\n")?;
@@ -541,7 +562,7 @@ mod tests {
                 "fixture=$(mktemp -d) && cd \"$fixture\" && mkdir src && printf '[package]\\nname = \"fixture\"\\nversion = \"0.1.0\"\\nedition = \"2024\"\\n' > Cargo.toml && printf '#[test]\\nfn passes() { assert_eq!(2 + 2, 4); }\\n' > src/lib.rs && cargo test",
             ),
             (
-                "golang:1.25.1-trixie",
+                "golang:1.24-trixie",
                 "fixture=$(mktemp -d) && cd \"$fixture\" && go mod init example.test/fixture && printf 'package fixture\\n\\nimport \"testing\"\\n\\nfunc TestPasses(t *testing.T) {}\\n' > fixture_test.go && go test ./...",
             ),
         ] {
