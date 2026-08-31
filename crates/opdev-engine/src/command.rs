@@ -107,9 +107,8 @@ pub fn execute(
             source,
         })?;
 
-    let mut process = Command::new(program);
+    let mut process = command_for(program, arguments);
     process
-        .args(arguments)
         .current_dir(working_directory)
         .stdin(if input.is_some() {
             Stdio::piped()
@@ -148,6 +147,82 @@ pub fn execute(
         stderr: bounded_text(&stderr),
         duration_ms: started.elapsed().as_millis(),
     })
+}
+
+fn command_for(program: &str, arguments: &[String]) -> Command {
+    #[cfg(windows)]
+    let executable = resolve_package_manager_shim(
+        program,
+        std::env::var_os("PATH").as_deref(),
+        std::env::var_os("PATHEXT").as_deref(),
+    )
+    .unwrap_or_else(|| program.into());
+    #[cfg(not(windows))]
+    let executable = program;
+
+    let mut command = Command::new(executable);
+    command.args(arguments);
+    command
+}
+
+#[cfg(windows)]
+fn resolve_package_manager_shim(
+    program: &str,
+    search_path: Option<&std::ffi::OsStr>,
+    path_extensions: Option<&std::ffi::OsStr>,
+) -> Option<std::path::PathBuf> {
+    const TRUSTED_NAMES: &[&str] = &["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg"];
+    const EXECUTABLE_EXTENSIONS: &[&str] = &[".COM", ".EXE", ".BAT", ".CMD"];
+    const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+
+    let requested = Path::new(program);
+    if requested.components().count() != 1 {
+        return None;
+    }
+    let extension = requested
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(|value| format!(".{}", value.to_ascii_uppercase()));
+    if extension
+        .as_deref()
+        .is_some_and(|value| !EXECUTABLE_EXTENSIONS.contains(&value))
+    {
+        return None;
+    }
+    let name = requested
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)?
+        .to_ascii_lowercase();
+    if !TRUSTED_NAMES.contains(&name.as_str()) {
+        return None;
+    }
+
+    let extensions = extension.map_or_else(
+        || {
+            path_extensions
+                .and_then(std::ffi::OsStr::to_str)
+                .unwrap_or(DEFAULT_PATHEXT)
+                .split(';')
+                .filter_map(|value| {
+                    let value = value.trim().to_ascii_uppercase();
+                    EXECUTABLE_EXTENSIONS
+                        .contains(&value.as_str())
+                        .then_some(value)
+                })
+                .collect::<Vec<_>>()
+        },
+        |value| vec![value],
+    );
+    let search_path = search_path?;
+    for directory in std::env::split_paths(search_path) {
+        for extension in &extensions {
+            let candidate = directory.join(format!("{name}{extension}"));
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 fn wait_with_timeout(
@@ -216,6 +291,146 @@ mod tests {
         let bounded = bounded_text(&oversized);
         assert!(bounded.len() <= MAX_CAPTURE_BYTES);
         assert!(bounded.ends_with("[output truncated by OpDev]"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn trusted_package_manager_shims_follow_path_and_pathext()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let first = directory.path().join("first");
+        let second = directory.path().join("second");
+        std::fs::create_dir_all(&first)?;
+        std::fs::create_dir_all(&second)?;
+        for name in ["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg"] {
+            std::fs::write(second.join(format!("{name}.CMD")), "@exit /b 0\r\n")?;
+        }
+        std::fs::write(first.join("npm.EXE"), b"fixture")?;
+        std::fs::write(first.join("npm.PS1"), b"fixture")?;
+        std::fs::write(first.join("cargo.CMD"), b"fixture")?;
+        let search_path = std::env::join_paths([&first, &second])?;
+        let path_extensions = std::ffi::OsStr::new(".PS1;.EXE;.CMD");
+
+        assert_eq!(
+            resolve_package_manager_shim("npm", Some(&search_path), Some(path_extensions)),
+            Some(first.join("npm.EXE"))
+        );
+        for name in ["npx", "pnpm", "pnpx", "yarn", "yarnpkg"] {
+            assert_eq!(
+                resolve_package_manager_shim(name, Some(&search_path), Some(path_extensions)),
+                Some(second.join(format!("{name}.CMD")))
+            );
+        }
+        assert!(
+            resolve_package_manager_shim("cargo", Some(&search_path), Some(path_extensions))
+                .is_none()
+        );
+        assert!(
+            resolve_package_manager_shim("npm.ps1", Some(&search_path), Some(path_extensions))
+                .is_none()
+        );
+        assert!(
+            resolve_package_manager_shim(".\\npm", Some(&search_path), Some(path_extensions))
+                .is_none()
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn initialized_node_project_runs_npm_canonical_check() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let status = Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(root)
+            .status()?;
+        assert!(status.success());
+        std::fs::write(
+            root.join("package.json"),
+            r#"{
+  "name": "opdev-windows-npm-fixture",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node -e \"console.log('opdev npm fixture passed')\""
+  }
+}
+"#,
+        )?;
+        let discovery = opdev_project::discover(root)?;
+        let manifest_path = root.join(opdev_project::MANIFEST_PATH);
+        discovery.manifest.write_new(&manifest_path)?;
+        let initialized = opdev_project::ProjectManifest::load(&manifest_path)?;
+        let report = crate::evaluate(root, &initialized, crate::CheckOptions::pre_merge())?;
+        let check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "check")
+            .ok_or_else(|| std::io::Error::other("Node check suite was not evaluated"))?;
+        assert_eq!(check.outcome, opdev_core::Outcome::Passed);
+        assert!(
+            check
+                .stdout
+                .as_deref()
+                .is_some_and(|stdout| stdout.contains("opdev npm fixture passed"))
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn package_manager_shim_arguments_cannot_escape_into_cmd()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let marker = directory.path().join("shell-escape-marker");
+        let command = CommandSpec {
+            argv: vec![
+                "npm".into(),
+                format!("& echo escaped > {}", marker.display()),
+            ],
+            working_directory: None,
+            timeout_seconds: Some(10),
+        };
+
+        let execution = execute(directory.path(), &command, None);
+        assert!(
+            execution.is_err() || execution.is_ok_and(|result| result.exit_code != Some(0)),
+            "an injection-shaped npm argument unexpectedly succeeded"
+        );
+        assert!(!marker.exists(), "npm argument escaped into cmd.exe");
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installed_package_manager_shims_execute_where_available()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let search_path = std::env::var_os("PATH");
+        let path_extensions = std::env::var_os("PATHEXT");
+        let mut executed = Vec::new();
+        for program in ["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg"] {
+            if resolve_package_manager_shim(
+                program,
+                search_path.as_deref(),
+                path_extensions.as_deref(),
+            )
+            .is_none()
+            {
+                continue;
+            }
+            let command = CommandSpec {
+                argv: vec![program.into(), "--version".into()],
+                working_directory: None,
+                timeout_seconds: Some(30),
+            };
+            let result = execute(Path::new("."), &command, None)?;
+            assert_eq!(result.exit_code, Some(0), "{program}: {}", result.stderr);
+            executed.push(program);
+        }
+        assert!(executed.contains(&"npm"));
+        assert!(executed.contains(&"npx"));
+        Ok(())
     }
 
     #[test]

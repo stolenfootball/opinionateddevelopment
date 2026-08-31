@@ -24,7 +24,7 @@ when this policy changes.
 The CLI treats initialized project content as untrusted:
 
 - discovery does not execute repository-controlled commands;
-- configured checks use exact argument vectors without a shell;
+- configured checks use exact argument vectors without a general-purpose shell;
 - checks have time and output bounds and terminate their process group;
 - remote audits are read-only and limited to first-class provider hosts;
 - extensions cannot replace or weaken core MinimumCD results; and
@@ -33,3 +33,14 @@ The CLI treats initialized project content as untrusted:
 Running an initialized project's canonical commands still executes code chosen
 by that project. Review `.opdev/project.yaml` before running checks from an
 untrusted repository.
+
+On Windows, Node package managers are commonly installed as batch shims rather
+than native executables. OpDev resolves only `npm`, `npx`, `pnpm`, `pnpx`,
+`yarn`, and `yarnpkg` through the executable subset of `PATHEXT` in `PATH`; it
+does not implicitly search the repository working directory or execute
+association-based script types such as PowerShell or JavaScript. The resolved
+absolute `.cmd` or `.bat` path is passed to Rust's constrained batch-file
+launcher. OpDev never
+constructs an unrestricted `cmd /c` string, and Rust rejects arguments it
+cannot escape safely. The package manager and project scripts remain
+project-controlled code and require the same review as any canonical command.
