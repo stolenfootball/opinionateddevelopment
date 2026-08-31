@@ -520,3 +520,87 @@ changes:
           - kind: test
             summary: The regression suite prevents OAuth rejection, accidental header retries, and token disclosure from returning silently.
             location: crates/opdev-remote/src/lib.rs
+  - fingerprint: b44e7f22a2b164a9a895f48cc1ccd3e6c0c49add5e44d1a897a86cbbc2248f04
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/15
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: Issue 15 defines the greenfield authoring burden, fail-closed constraints, two-ecosystem comparison, and required outcome preservation.
+        evidence:
+          - kind: work
+            summary: The canary finding records the 76-line baseline and requires guided review without inferred passes.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/15
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: The evidence specification records a two-stage schema-backed review that separates durable and fingerprint-bound facts while preserving the committed ledger contract.
+        evidence:
+          - kind: specification
+            summary: Bootstrap generation, explicit decisions, stale-input rejection, create-new writing, shared evidence expansion, and direct-maintenance behavior are normative.
+            location: spec/evidence-ledger.md
+          - kind: research
+            summary: JSON Schema annotations inform reviewers but do not populate or validate decisions, so OpDev uses explicit semantic validation and unresolved defaults.
+            location: https://json-schema.org/understanding-json-schema/reference/annotations
+          - kind: research
+            summary: NIST SSDF recommends integrating adaptable secure-development practices throughout each SDLC rather than prescribing one project-specific implementation.
+            location: https://www.nist.gov/publications/secure-software-development-framework-ssdf-version-11-recommendations-mitigating-risk
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The issue branch originated from current main and is scoped to one greenfield evidence-bootstrap increment.
+        evidence:
+          - kind: git
+            summary: The short-lived codex/issue-15-evidence-bootstrap branch is a direct descendant of main.
+            location: codex/issue-15-evidence-bootstrap
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: Issue 15 research, implementation, and qualification are being completed in one bounded integration cycle.
+        evidence:
+          - kind: git
+            summary: The branch contains one review-bootstrap increment ready for immediate integration.
+            location: codex/issue-15-evidence-bootstrap
+      - rule_id: MCD-FLOW-001
+        outcome: not_applicable
+        summary: The required trunk pipeline was green when issue 15 work began.
+        evidence:
+          - kind: remote
+            summary: Main pipeline 27 passed before this implementation branch was created.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2804223883
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: The existing evidence ledger and direct fingerprint workflow remain valid; bootstrap is an additive create-new path that expands into the same assertions.
+        evidence:
+          - kind: test
+            summary: Existing ledger schema and fingerprint tests still pass alongside bootstrap schema, process, and overwrite regressions.
+            location: crates/opdev-project/src/evidence.rs
+          - kind: validation
+            summary: Both Codex and Claude Code plugin validators accept the updated shared guidance.
+            location: plugins/opdev
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: Every issue 15 acceptance condition maps to schema, semantic, process-level, and two-ecosystem outcome tests.
+        evidence:
+          - kind: test
+            summary: Node and Go fixtures prove the completed questionnaire is less than half the expanded ledger size and produces the same accepted evaluator outcomes.
+            location: crates/opdev-cli/src/main.rs
+          - kind: test
+            summary: The actual CLI generates unresolved commented questions, previews without writing, writes only explicitly, and refuses a second bootstrap.
+            location: crates/opdev-cli/tests/evidence_bootstrap.rs
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: Agent-authored bootstrap decisions remain review_required until a reviewer supplies concrete evidence and explicitly changes each outcome.
+        evidence:
+          - kind: policy
+            summary: Persistent agent guidance directs fresh sessions to the schema-backed review flow and retains the prohibition on self-attestation.
+            location: AGENTS.md
+          - kind: test
+            summary: Empty evidence, stale fingerprints, changed candidate sets, implicit decisions, and existing-ledger replacement all fail closed.
+            location: crates/opdev-project/src/evidence.rs
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: The two canary ledgers were generalized into one portable shared-evidence questionnaire rather than weakened gates or ecosystem-specific templates.
+        evidence:
+          - kind: work
+            summary: Issue 15 preserves the observed Node and Go setup burden and its strict outcome baseline.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/15
+          - kind: test
+            summary: Cross-ecosystem fixtures quantify the reduction while re-evaluating every accepted candidate through the unchanged rule engine.
+            location: crates/opdev-cli/src/main.rs

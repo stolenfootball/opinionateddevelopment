@@ -10,8 +10,8 @@ mod manifest;
 pub use bootstrap::{BootstrapError, FileChange, ManagedFile, reconcile_agent_files};
 pub use discovery::{Discovery, DiscoveryError, discover};
 pub use evidence::{
-    ChangeEvidence, EVIDENCE_PATH, EvidenceAssertion, EvidenceError, EvidenceLedger,
-    staged_fingerprint,
+    ChangeEvidence, ChangeEvidenceReview, EVIDENCE_PATH, EvidenceAssertion, EvidenceBootstrap,
+    EvidenceError, EvidenceLedger, EvidenceReview, ReviewDecision, staged_fingerprint,
 };
 pub use manifest::{
     Artifact, Assurance, AuthorityKind, AuthorityRef, ChangeTests, CiConfig, CiProvider,

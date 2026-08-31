@@ -8,12 +8,13 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use opdev_ci::{Capability, TemplateContext, adapter_for, infer_gitlab_image, write_new};
 use opdev_core::{
     AggregateVerdict, EXTENSION_PROTOCOL_VERSION, Gate, Outcome, PROJECT_SCHEMA_VERSION, RuleId,
-    embedded_catalog, embedded_profiles, resolve_profile,
+    VerificationMethod, embedded_catalog, embedded_profiles, resolve_profile,
 };
 use opdev_engine::{CheckOptions, CheckReport, evaluate, reaggregate};
 use opdev_project::{
-    CiProvider, CoverageMode, DeliveryStatus, FileChange, MANIFEST_PATH, ProjectManifest,
-    RecoveryStrategy, discover, reconcile_agent_files, staged_fingerprint,
+    CiProvider, CoverageMode, DeliveryStatus, EVIDENCE_PATH, EvidenceBootstrap, FileChange,
+    MANIFEST_PATH, ProjectManifest, RecoveryStrategy, discover, reconcile_agent_files,
+    staged_fingerprint,
 };
 use opdev_release::{
     EvidenceRequest, PackageFormat, PackageInput, PackageRequest, generate_evidence,
@@ -259,6 +260,8 @@ struct EvidenceArgs {
 enum EvidenceCommand {
     /// Print the staged index fingerprint used by change evidence.
     Fingerprint(EvidenceFingerprintArgs),
+    /// Generate or apply a fail-closed review questionnaire for a new evidence ledger.
+    Bootstrap(EvidenceBootstrapArgs),
 }
 
 #[derive(Debug, Args)]
@@ -266,6 +269,19 @@ struct EvidenceFingerprintArgs {
     /// Directory inside the initialized Git repository.
     #[arg(long, default_value = ".")]
     root: PathBuf,
+}
+
+#[derive(Debug, Args)]
+struct EvidenceBootstrapArgs {
+    /// Directory inside the initialized Git repository.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+    /// Completed questionnaire to validate and expand; omit to print a new questionnaire.
+    #[arg(long)]
+    answers: Option<PathBuf>,
+    /// Create `.opdev/evidence.yaml`; otherwise print the candidate ledger.
+    #[arg(long, requires = "answers")]
+    write: bool,
 }
 
 fn main() -> ExitCode {
@@ -306,8 +322,104 @@ fn evidence_command(args: &EvidenceArgs) -> Result<()> {
             let (root, _) = load_project(&args.root)?;
             println!("{}", staged_fingerprint(&root)?);
         }
+        EvidenceCommand::Bootstrap(args) => bootstrap_evidence(args)?,
     }
     Ok(())
+}
+
+fn bootstrap_evidence(args: &EvidenceBootstrapArgs) -> Result<()> {
+    let (root, manifest) = load_project(&args.root)?;
+    let ledger_path = root.join(EVIDENCE_PATH);
+    if ledger_path.exists() {
+        bail!(
+            "{} already exists; bootstrap is intentionally create-new only",
+            ledger_path.display()
+        );
+    }
+
+    let fingerprint = staged_fingerprint(&root)?;
+    let mut report = evaluate(
+        &root,
+        &manifest,
+        CheckOptions {
+            execute_checks: false,
+            ..CheckOptions::pre_merge()
+        },
+    )
+    .context("project evaluation failed")?;
+    apply_local_ci(&root, &manifest, &mut report)?;
+    let catalog = embedded_catalog().context("could not load the embedded rule catalog")?;
+    let (project_rules, change_rules) = evidence_candidates(&catalog, &report);
+
+    if let Some(path) = &args.answers {
+        let answers = EvidenceBootstrap::load(path)?;
+        answers.validate_candidates(&project_rules, &change_rules, &fingerprint)?;
+        let ledger = answers.to_ledger(&catalog)?;
+        if args.write {
+            let path = ledger.write_new(&root, &catalog)?;
+            println!("created {}", path.display());
+        } else {
+            print!("{}", ledger.to_yaml()?);
+            eprintln!(
+                "candidate only: review this expansion, then repeat with --write to create the ledger"
+            );
+        }
+    } else {
+        let questionnaire = EvidenceBootstrap::new(
+            fingerprint,
+            project_rules.iter().cloned(),
+            change_rules.iter().cloned(),
+        );
+        print!("{}", questionnaire.to_review_yaml(&catalog)?);
+        eprintln!(
+            "all decisions are review_required; add shared evidence and explicitly review each outcome"
+        );
+    }
+    Ok(())
+}
+
+fn evidence_candidates(
+    catalog: &opdev_core::RuleCatalog,
+    report: &CheckReport,
+) -> (Vec<String>, Vec<String>) {
+    let mut project = Vec::new();
+    let mut change = Vec::new();
+    for rule in &catalog.rules {
+        let unverified = report
+            .rules
+            .iter()
+            .find(|result| result.rule_id == rule.id)
+            .is_some_and(|result| result.outcome == Outcome::Unverified);
+        let reviewable = rule.verification.contains(&VerificationMethod::Evidence)
+            || rule.verification.contains(&VerificationMethod::Agent);
+        if !unverified || !reviewable {
+            continue;
+        }
+        let destination = if change_scoped_rule(rule.id.as_str()) {
+            &mut change
+        } else {
+            &mut project
+        };
+        destination.push(rule.id.as_str().to_owned());
+    }
+    (project, change)
+}
+
+fn change_scoped_rule(rule_id: &str) -> bool {
+    matches!(
+        rule_id,
+        "OPDEV-WORK-001"
+            | "OPDEV-DESIGN-001"
+            | "MCD-TRUNK-002"
+            | "MCD-TRUNK-003"
+            | "MCD-FLOW-001"
+            | "MCD-COMPAT-001"
+            | "OPDEV-TEST-002"
+            | "OPDEV-TEST-003"
+            | "OPDEV-TEST-004"
+            | "OPDEV-AI-001"
+            | "OPDEV-LEARN-001"
+    )
 }
 
 fn release_command(args: &ReleaseArgs) -> Result<()> {
@@ -795,6 +907,15 @@ mod tests {
                 "1",
             ],
             vec!["opdev", "evidence", "fingerprint"],
+            vec!["opdev", "evidence", "bootstrap"],
+            vec![
+                "opdev",
+                "evidence",
+                "bootstrap",
+                "--answers",
+                "review.yaml",
+                "--write",
+            ],
             vec![
                 "opdev",
                 "release",
@@ -867,5 +988,105 @@ mod tests {
             Outcome::MigrationRequired,
             Outcome::Unverified
         ));
+    }
+
+    #[test]
+    fn node_and_go_bootstrap_inputs_are_smaller_without_changing_rule_outcomes()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for (file, contents) in [
+            (
+                "package.json",
+                r#"{"name":"bootstrap-node","scripts":{"test":"node --test"}}"#,
+            ),
+            ("go.mod", "module example.test/bootstrap-go\n\ngo 1.24\n"),
+        ] {
+            let directory = tempfile::tempdir()?;
+            let root = directory.path();
+            assert!(
+                std::process::Command::new("git")
+                    .arg("init")
+                    .arg(root)
+                    .status()?
+                    .success()
+            );
+            std::fs::write(root.join(file), contents)?;
+            std::fs::write(
+                root.join("OPDEV_ADOPTION.md"),
+                "Reviewed project policy, applicability, change scope, tests, and integration behavior.\n",
+            )?;
+            let discovery = discover(root)?;
+            discovery.manifest.write_new(&root.join(MANIFEST_PATH))?;
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(root)
+                    .args(["add", "."])
+                    .status()?
+                    .success()
+            );
+
+            let fingerprint = staged_fingerprint(root)?;
+            let mut report = evaluate(
+                root,
+                &discovery.manifest,
+                CheckOptions {
+                    execute_checks: false,
+                    ..CheckOptions::pre_merge()
+                },
+            )?;
+            apply_local_ci(root, &discovery.manifest, &mut report)?;
+            let catalog = embedded_catalog()?;
+            let (project_rules, change_rules) = evidence_candidates(&catalog, &report);
+            assert!(!project_rules.is_empty());
+            assert!(!change_rules.is_empty());
+
+            let mut review = EvidenceBootstrap::new(
+                fingerprint.clone(),
+                project_rules.clone(),
+                change_rules.clone(),
+            );
+            for decision in review.project.decisions.values_mut() {
+                *decision = opdev_project::ReviewDecision::Passed;
+            }
+            for decision in review.change.decisions.values_mut() {
+                *decision = opdev_project::ReviewDecision::Passed;
+            }
+            let shared = opdev_core::Evidence {
+                kind: "review".into(),
+                summary: "The adoption review records the facts supporting these decisions.".into(),
+                location: Some("OPDEV_ADOPTION.md".into()),
+            };
+            review.project.evidence.push(shared.clone());
+            review.change.evidence.push(shared);
+            review.change.work = "OPDEV-15 greenfield adoption review".into();
+            review.validate_candidates(&project_rules, &change_rules, &fingerprint)?;
+            let review_yaml = review.to_yaml()?;
+            let ledger = review.to_ledger(&catalog)?;
+            let ledger_yaml = ledger.to_yaml()?;
+            assert!(review_yaml.lines().count() * 2 < ledger_yaml.lines().count());
+            ledger.write_new(root, &catalog)?;
+
+            let mut verified = evaluate(
+                root,
+                &discovery.manifest,
+                CheckOptions {
+                    execute_checks: false,
+                    ..CheckOptions::pre_merge()
+                },
+            )?;
+            apply_local_ci(root, &discovery.manifest, &mut verified)?;
+            for rule_id in project_rules.iter().chain(&change_rules) {
+                assert_eq!(
+                    verified
+                        .rules
+                        .iter()
+                        .find(|result| result.rule_id.as_str() == rule_id)
+                        .map(|result| result.outcome),
+                    Some(Outcome::Passed),
+                    "{file} did not preserve the accepted outcome for {rule_id}"
+                );
+            }
+        }
+        Ok(())
     }
 }

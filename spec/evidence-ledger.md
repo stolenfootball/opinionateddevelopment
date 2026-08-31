@@ -11,16 +11,43 @@ staged Git index. The fingerprint includes each tracked path, mode, stage, and
 Git blob identity while excluding only `.opdev/evidence.yaml`, allowing the
 ledger to be written after the fingerprint is calculated.
 
-The safe sequence is:
+For a new ledger, the preferred safe sequence is:
 
 1. stage every material file for the change;
-2. run `opdev evidence fingerprint`;
-3. add or replace the matching change entry in `.opdev/evidence.yaml`;
-4. stage the ledger and run `opdev check` or `opdev check --ci`; and
-5. review and commit the evidence with the files it describes.
+2. run `opdev evidence bootstrap` and save its standard output outside the Git
+   working tree;
+3. review each generated rule, replacing `review_required` only with a justified
+   `passed` or `not_applicable`, and add concrete shared evidence to the relevant
+   scope;
+4. preview the expanded ledger with `opdev evidence bootstrap --answers PATH`;
+5. create it explicitly with
+   `opdev evidence bootstrap --answers PATH --write`; and
+6. stage the ledger, run `opdev check` or `opdev check --ci`, then review and
+   commit the evidence with the files it describes.
 
-Fingerprinting fails when tracked changes are unstaged or material untracked
-files exist. CI checks out the committed index and recomputes the same value.
+The bootstrap document is a versioned, schema-validated questionnaire, not an
+attestation. It is generated from rules that the current pre-merge evaluator
+still reports as `unverified` and that permit reviewed evidence. Every decision
+starts as `review_required`, which never enters the ledger and never satisfies a
+gate. The completed questionnaire must retain exactly the generated candidate
+set and staged fingerprint; added, removed, re-scoped, or stale answers are
+rejected. `--write` uses create-new semantics and refuses to alter an existing
+ledger. Existing ledgers continue to be reviewed and maintained directly.
+
+The questionnaire intentionally separates `project` from `change`. Project
+evidence supports durable policy or capability across changes. Change evidence
+requires a work authority and is usable only with its exact fingerprint. Each
+scope may cite shared evidence once; the CLI expands accepted decisions into the
+ordinary per-rule assertions shown below so the committed ledger remains fully
+reviewable. A reviewer must confirm that every shared fact actually supports
+every accepted decision in that scope.
+
+`opdev evidence fingerprint` remains available for direct ledger maintenance.
+
+Fingerprinting and bootstrap generation fail when tracked changes are unstaged
+or material untracked files exist. Keep the questionnaire outside the working
+tree so it does not become unindexed input. CI checks out the committed index
+and recomputes the same value.
 Any future path, content, or executable-bit change produces a different
 fingerprint, so stale change assertions are ignored and required rules return
 to `unverified`.
@@ -30,7 +57,30 @@ It cannot override an explicit failure, error, migration requirement, manifest
 contradiction, CI result, or remote-provider result. Project extensions remain
 structurally separate and cannot write core rule results.
 
-Example:
+A completed compact review can look like this:
+
+```yaml
+schema: 1
+project:
+  evidence:
+    - kind: policy
+      summary: The security boundary and reporting process were reviewed.
+      location: SECURITY.md
+  decisions:
+    OPDEV-SEC-001: passed
+change:
+  fingerprint: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  work: https://example.test/project/issues/42
+  evidence:
+    - kind: work
+      summary: The issue records scope, exclusions, acceptance evidence, and risks.
+      location: https://example.test/project/issues/42
+  decisions:
+    OPDEV-WORK-001: passed
+    OPDEV-DESIGN-001: not_applicable
+```
+
+The CLI expands that reviewed input into the committed ledger contract:
 
 ```yaml
 schema: 1

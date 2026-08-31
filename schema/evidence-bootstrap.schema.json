@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opdev.dev/schema/evidence-bootstrap-v1.json",
+  "title": "OpDev evidence bootstrap review",
+  "description": "Compact reviewer input used to produce, but never implicitly approve, an OpDev evidence ledger.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "project", "change"],
+  "properties": {
+    "schema": { "const": 1 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "decisions"],
+      "properties": {
+        "evidence": { "$ref": "#/$defs/evidence-list" },
+        "decisions": { "$ref": "#/$defs/decisions" }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint", "work", "evidence", "decisions"],
+      "properties": {
+        "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "work": { "type": "string" },
+        "evidence": { "$ref": "#/$defs/evidence-list" },
+        "decisions": { "$ref": "#/$defs/decisions" }
+      }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "summary"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "location": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence-list": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "decisions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z0-9]+(?:-[A-Z0-9]+)+-[0-9]{3}$"
+      },
+      "additionalProperties": {
+        "enum": ["review_required", "passed", "not_applicable"]
+      }
+    }
+  }
+}
