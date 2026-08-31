@@ -220,3 +220,78 @@ changes:
           - kind: test
             summary: A read-only remote capability that cannot prove branch lifecycle no longer erases stronger reviewed evidence; definitive remote failures still replace it.
             location: crates/opdev-cli/src/main.rs
+  - fingerprint: 2d127614c698ed9f50286b94cedacbc9f7495543a3af76ffdeb64de69e0e1684
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/11
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: Issue 11 defines the observed provider failures, intended installer behavior, and end-to-end acceptance evidence.
+        evidence:
+          - kind: work
+            summary: The canary finding identifies the incorrect asset name, worktree pollution, affected providers, and required regressions.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/11
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: The CI provider contract now requires exact release identity and job-scoped installer isolation.
+        evidence:
+          - kind: specification
+            summary: The provider boundary records versioned archive selection and temporary storage outside the checkout.
+            location: spec/ci-providers.md
+          - kind: research
+            summary: GitHub documents RUNNER_TEMP as a job-scoped directory emptied before and after each job; GitLab release links expose explicit direct asset paths.
+            location: https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The issue branch originated from current main and is scoped to one canary defect.
+        evidence:
+          - kind: git
+            summary: The short-lived codex/issue-11-ci-installer branch is a direct descendant of main.
+            location: codex/issue-11-ci-installer
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: Issue 11 implementation and integration are being completed within the same working day.
+        evidence:
+          - kind: git
+            summary: The branch contains one bounded provider-contract increment ready for immediate integration.
+            location: codex/issue-11-ci-installer
+      - rule_id: MCD-FLOW-001
+        outcome: not_applicable
+        summary: The required trunk pipeline was green when issue 11 work began.
+        evidence:
+          - kind: remote
+            summary: No failing required main pipeline blocked this repair branch.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: Existing provider generation and provider-neutral inspection remain compatible while generated installer output is strengthened.
+        evidence:
+          - kind: test
+            summary: Both generated configurations still parse and satisfy local inspection, and custom pipelines are not required to copy template-specific setup.
+            location: crates/opdev-ci/src/lib.rs
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: Every issue 11 acceptance condition maps to structural, inspection, fingerprint, or live CI evidence.
+        evidence:
+          - kind: test
+            summary: Tests cover versioned filenames, temporary destinations, fixture installation, and unchanged staged fingerprints.
+            location: crates/opdev-ci/src/lib.rs
+          - kind: ci
+            summary: The Unix-only fixture execution is required to pass in the merge-request pipeline.
+            location: .gitlab-ci.yml
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: Agent-authored installer changes are accepted only after the same formatter, linter, tests, evidence binding, and CI review used for other changes.
+        evidence:
+          - kind: policy
+            summary: The initialized repository protocol requires canonical checks and evidence-backed integration.
+            location: AGENTS.md
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: The private canary failures were generalized into a provider contract, executable issue, stronger inspection, and repeatable regression tests.
+        evidence:
+          - kind: work
+            summary: Issue 11 preserves the observed release and fingerprint failures after disposable canary cleanup.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/11
+          - kind: test
+            summary: The regression suite prevents both incorrect archive names and checkout-local installer outputs from returning silently.
+            location: crates/opdev-ci/src/lib.rs
