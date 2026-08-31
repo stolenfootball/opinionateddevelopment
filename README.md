@@ -208,6 +208,13 @@ that the CLI starts, and then evaluates the project contract.
 Generation refuses to replace an existing provider configuration. Review and
 commit the generated file like any other build-system change.
 
+Read-only remote audits use provider environment credentials when present. For
+GitLab, an authenticated `glab` session is the final fallback, so a browser or
+device OAuth login works without copying its token into project files. Exact
+credential precedence and header behavior are defined in
+[`spec/remote-audits.md`](spec/remote-audits.md); credentials never appear in
+reports or diagnostics.
+
 ## Rules, results, and gates
 
 OpDev `0.1.0` evaluates 37 core OpDev and MinimumCD rules. Every applicable rule

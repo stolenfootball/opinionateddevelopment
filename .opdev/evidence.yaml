@@ -445,3 +445,78 @@ changes:
           - kind: test
             summary: The regression suite proves the real initialized npm workflow and rejects both unallowlisted and association-based shim resolution.
             location: crates/opdev-engine/src/command.rs
+  - fingerprint: e4eac968db2517453816b85baa6107c91cc37c7d6baab7f296002bc3bf489931
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/14
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: Issue 14 defines the observed OAuth authentication failure, credential classes, deterministic behavior, fail-closed handling, and private-project acceptance.
+        evidence:
+          - kind: work
+            summary: The canary report records Bearer success, PRIVATE-TOKEN rejection, and the required mocked and live regression evidence.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/14
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: Remote authentication now has one documented precedence order, universal Bearer defaults, an explicit private-header compatibility path, and no retry ambiguity.
+        evidence:
+          - kind: specification
+            summary: Credential sources, header schemes, glab fallback, non-disclosure, and HTTP failure semantics are recorded in the remote-audit contract.
+            location: spec/remote-audits.md
+          - kind: research
+            summary: GitLab documents Bearer support for OAuth and personal, project, and group access tokens, plus PRIVATE-TOKEN support for access tokens.
+            location: https://docs.gitlab.com/api/rest/authentication/
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The issue branch originated from current main and is scoped to GitLab remote-audit authentication.
+        evidence:
+          - kind: git
+            summary: The short-lived codex/issue-14-gitlab-oauth branch is a direct descendant of main.
+            location: codex/issue-14-gitlab-oauth
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: Issue 14 implementation and integration are being completed within one working day.
+        evidence:
+          - kind: git
+            summary: The branch contains one bounded authentication increment ready for immediate integration.
+            location: codex/issue-14-gitlab-oauth
+      - rule_id: MCD-FLOW-001
+        outcome: not_applicable
+        summary: The required trunk pipeline was green when issue 14 work began.
+        evidence:
+          - kind: remote
+            summary: Main pipeline 25 passed before this implementation branch was created.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2804206930
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: Existing GitLab token variables remain accepted, personal tokens work through the documented Bearer form, and explicit PRIVATE-TOKEN behavior remains available.
+        evidence:
+          - kind: test
+            summary: Mock requests prove both header schemes and deterministic source precedence without changing GitHub authentication.
+            location: crates/opdev-remote/src/lib.rs
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: Credential selection, both accepted headers, 401 failure, secret redaction, glab fallback, and private-project access have executable coverage.
+        evidence:
+          - kind: test
+            summary: Local HTTP mocks capture the expected headers and prove a 401 result stays non-satisfying without copying the fixture token into its diagnostic.
+            location: crates/opdev-remote/src/lib.rs
+          - kind: validation
+            summary: With all GitLab token environment variables removed, the opt-in live audit resolved a glab OAuth credential and verified the private stolenfootball-tools/shear main branch.
+            location: crates/opdev-remote/src/lib.rs
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: Agent-authored credential changes are accepted only after mocked security regressions, private live validation, canonical checks, evidence binding, and CI review.
+        evidence:
+          - kind: policy
+            summary: The initialized repository protocol requires canonical checks and evidence-backed integration.
+            location: AGENTS.md
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: The canary authentication failure was generalized into a token-class-neutral default and an optional seamless glab credential bridge.
+        evidence:
+          - kind: work
+            summary: Issue 14 preserves the observed OAuth header mismatch after disposable canary cleanup.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/14
+          - kind: test
+            summary: The regression suite prevents OAuth rejection, accidental header retries, and token disclosure from returning silently.
+            location: crates/opdev-remote/src/lib.rs
