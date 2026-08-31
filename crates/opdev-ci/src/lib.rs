@@ -322,11 +322,20 @@ fn passed(path: &Path, summary: &str) -> Capability {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(unix)]
+    use std::process::Command;
+
     fn context() -> TemplateContext {
         TemplateContext {
             opdev_version: "0.1.0".into(),
             trunk: "main".into(),
         }
+    }
+
+    fn rendered(provider: CiProvider) -> Result<String, Box<dyn std::error::Error>> {
+        Ok(adapter_for(provider)?.render(&context())?)
     }
 
     #[test]
@@ -355,10 +364,147 @@ mod tests {
     }
 
     #[test]
+    fn generated_installers_use_versioned_archives_outside_the_worktree()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let github = rendered(CiProvider::Github)?;
+        assert!(
+            github.contains("archive=\"opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz\"")
+        );
+        assert!(github.contains("mktemp -d \"$RUNNER_TEMP/opdev-install.XXXXXX\""));
+        assert!(github.contains("--output \"$install_dir/$archive\""));
+        assert!(!github.contains("--output \"$archive\""));
+
+        let gitlab = rendered(CiProvider::Gitlab)?;
+        assert!(
+            gitlab.contains("archive=\"opdev-${OPDEV_VERSION}-x86_64-unknown-linux-gnu.tar.gz\"")
+        );
+        assert!(gitlab.contains("install_dir=\"$(mktemp -d)\""));
+        assert!(gitlab.contains("--output \"$install_dir/$archive\""));
+        assert!(!gitlab.contains("--output \"$archive\""));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rendered_installers_execute_a_release_fixture_without_dirtying_git()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for provider in [CiProvider::Github, CiProvider::Gitlab] {
+            execute_installer_fixture(provider)?;
+        }
+        Ok(())
+    }
+
+    #[test]
     fn missing_configuration_is_a_migration_not_a_pass() -> Result<(), Box<dyn std::error::Error>> {
         let directory = tempfile::tempdir()?;
         let inspection = adapter_for(CiProvider::Github)?.inspect(directory.path())?;
         assert_eq!(inspection.configuration.outcome, Outcome::MigrationRequired);
         Ok(())
+    }
+
+    #[cfg(unix)]
+    fn execute_installer_fixture(provider: CiProvider) -> Result<(), Box<dyn std::error::Error>> {
+        let project = tempfile::tempdir()?;
+        run(Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(project.path()))?;
+        fs::write(project.path().join("README.md"), "fixture\n")?;
+        let adapter = adapter_for(provider)?;
+        write_new(adapter, project.path(), &context())?;
+        run(Command::new("git")
+            .args(["add", "--all"])
+            .current_dir(project.path()))?;
+        let fingerprint = opdev_project::staged_fingerprint(project.path())?;
+
+        let fixture = tempfile::tempdir()?;
+        let payload = fixture.path().join("payload");
+        fs::create_dir(&payload)?;
+        let executable = payload.join("opdev");
+        fs::write(&executable, "#!/bin/sh\nexit 0\n")?;
+        let mut permissions = fs::metadata(&executable)?.permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions)?;
+        let archive = "opdev-0.1.0-x86_64-unknown-linux-gnu.tar.gz";
+        run(Command::new("tar")
+            .args(["-czf", archive, "-C", "payload", "opdev"])
+            .current_dir(fixture.path()))?;
+        let checksum = Command::new("sha256sum")
+            .arg(archive)
+            .current_dir(fixture.path())
+            .output()?;
+        if !checksum.status.success() {
+            return Err(std::io::Error::other("sha256sum fixture generation failed").into());
+        }
+        fs::write(fixture.path().join("SHA256SUMS"), checksum.stdout)?;
+
+        let fake_bin = fixture.path().join("bin");
+        fs::create_dir(&fake_bin)?;
+        let fake_curl = fake_bin.join("curl");
+        fs::write(
+            &fake_curl,
+            format!(
+                "#!/bin/sh\nset -eu\noutput=\nurl=\nwhile [ \"$#\" -gt 0 ]; do\n  case \"$1\" in\n    --output) output=$2; shift 2 ;;\n    *) url=$1; shift ;;\n  esac\ndone\ncase \"$url\" in\n  */SHA256SUMS) cp \"$FIXTURE_RELEASE/SHA256SUMS\" \"$output\" ;;\n  *) cp \"$FIXTURE_RELEASE/{archive}\" \"$output\" ;;\nesac\n"
+            ),
+        )?;
+        let mut permissions = fs::metadata(&fake_curl)?.permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&fake_curl, permissions)?;
+
+        let rendered = rendered(provider)?;
+        let parsed: serde_json::Value = serde_saphyr::from_str(&rendered)?;
+        let mut script = match provider {
+            CiProvider::Github => parsed["jobs"]["opdev"]["steps"][1]["run"]
+                .as_str()
+                .ok_or_else(|| std::io::Error::other("GitHub install step is not a string"))?
+                .to_owned(),
+            CiProvider::Gitlab => parsed["opdev"]["before_script"]
+                .as_array()
+                .ok_or_else(|| std::io::Error::other("GitLab before_script is not an array"))?
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .filter(|command| !command.starts_with("apk add"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            CiProvider::Other | CiProvider::Unconfigured => {
+                return Err(std::io::Error::other("unsupported fixture provider").into());
+            }
+        };
+        if provider == CiProvider::Gitlab {
+            script.push_str("\nopdev version\n");
+        }
+        let runner_temp = tempfile::tempdir()?;
+        let path = format!(
+            "{}:{}",
+            fake_bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        run(Command::new("bash")
+            .arg("-c")
+            .arg(script)
+            .env("FIXTURE_RELEASE", fixture.path())
+            .env("OPDEV_VERSION", "0.1.0")
+            .env("RUNNER_TEMP", runner_temp.path())
+            .env("PATH", path)
+            .current_dir(project.path()))?;
+        assert_eq!(
+            opdev_project::staged_fingerprint(project.path())?,
+            fingerprint
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn run(command: &mut Command) -> Result<(), Box<dyn std::error::Error>> {
+        let output = command.output()?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(format!(
+                "command failed: stdout={} stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ))
+            .into())
+        }
     }
 }
