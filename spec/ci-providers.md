@@ -9,8 +9,13 @@ Generated configurations run for proposed changes and the declared trunk, preser
 The GitLab adapter composes with the project's toolchain rather than assuming
 that a minimal OpDev-only image can execute arbitrary project commands. It
 selects a Debian Trixie variant of an official Rust, Go, Node.js, or Python
-image only when the repository declares a numeric toolchain version in a
-supported project-owned version file. Mixed ecosystems and custom toolchains
+image only when the repository declares supported numeric version metadata in a
+project-owned version file. Rust, Node.js, and Python retain the declared
+version. Go's `go` directive is a minimum requirement and its optional
+`toolchain` directive is a preferred toolchain, so OpDev selects the Docker
+Official Image's corresponding major-minor Trixie family (for example,
+`go 1.24.0` selects `golang:1.24-trixie`) instead of assuming that a
+patch-specific Debian tag exists. Mixed ecosystems and custom toolchains
 must select their reviewed image explicitly with `--image`; generation fails
 instead of guessing when no safe selection is available. The selected image
 must provide a POSIX shell, Git, curl, tar, `sha256sum`, and `mktemp`. The

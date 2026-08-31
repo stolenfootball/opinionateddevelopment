@@ -604,3 +604,81 @@ changes:
           - kind: test
             summary: Cross-ecosystem fixtures quantify the reduction while re-evaluating every accepted candidate through the unchanged rule engine.
             location: crates/opdev-cli/src/main.rs
+  - fingerprint: ba10be795eceedc2d7e8322635148e3c3138151d9a9e34f4ed242f0655407d63
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/17
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: Issue 17 preserves the failed private Go canary, root cause, intended image semantics, exclusions, and executable acceptance evidence.
+        evidence:
+          - kind: work
+            summary: The issue records the unavailable patch-specific Trixie tag and requires a real Docker and provider rerun.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/17
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: The provider contract now distinguishes Go's minimum or preferred version metadata from the Docker Official Image's major-minor family alias.
+        evidence:
+          - kind: specification
+            summary: Go inference, explicit custom-image behavior, and failure boundaries are recorded in the CI provider contract.
+            location: spec/ci-providers.md
+          - kind: research
+            summary: The Go module reference defines the go directive as a minimum required version and the toolchain directive as a suggested toolchain.
+            location: https://go.dev/ref/mod#go-mod-file-go
+          - kind: research
+            summary: Docker's official image source publishes major-minor Trixie aliases alongside current patch tags.
+            location: https://github.com/docker-library/official-images/blob/master/library/golang
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The repair branch originated from green main and is scoped to the failed Go image inference contract.
+        evidence:
+          - kind: git
+            summary: codex/issue-17-go-image-tags is a short-lived direct descendant of main.
+            location: codex/issue-17-go-image-tags
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: The observed failure, research, implementation, Docker qualification, and integration are occurring in one canary cycle.
+        evidence:
+          - kind: git
+            summary: The branch contains one bounded provider correction ready for immediate integration.
+            location: codex/issue-17-go-image-tags
+      - rule_id: MCD-FLOW-001
+        outcome: not_applicable
+        summary: OpDev main was green when the canary repair began; the failure belongs to the disposable canary branch.
+        evidence:
+          - kind: remote
+            summary: Main pipeline 29 passed before issue 17 implementation began.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2804245959
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: Rust, Node.js, Python, explicit-image, malformed-version, and provider inspection behavior remain unchanged while Go maps to its valid image family.
+        evidence:
+          - kind: test
+            summary: Existing provider tests pass and the version-metadata fixture covers both Go minimum and preferred toolchain forms.
+            location: crates/opdev-ci/src/lib.rs
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: Issue 17 acceptance is traced to deterministic inference tests, real registry manifest resolution, a rendered installer, and a Go test inside Docker.
+        evidence:
+          - kind: test
+            summary: go 1.24.0 selects golang:1.24-trixie while toolchain go1.25.1 selects golang:1.25-trixie.
+            location: crates/opdev-ci/src/lib.rs
+          - kind: test
+            summary: The ignored live test was run explicitly and completed the published OpDev installer plus go test inside golang:1.24-trixie.
+            location: crates/opdev-ci/src/lib.rs
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: The agent-authored provider repair is accepted only after primary-source research, canonical tests, live Docker qualification, evidence binding, and CI review.
+        evidence:
+          - kind: policy
+            summary: The initialized repository protocol requires the same canonical evidence for agent-authored work.
+            location: AGENTS.md
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: A live runner configuration failure was preserved and converted into a general Go directive and Docker tag regression rather than patched only in the canary.
+        evidence:
+          - kind: canary
+            summary: GitLab job 16196008870 failed before checkout because golang:1.24.0-trixie had no manifest.
+            location: https://gitlab.com/stolenfootball-tools/opdev-canary-gitlab-20260831-001418/-/jobs/16196008870
+          - kind: test
+            summary: The replacement major-minor tag resolves and runs the complete installer and Go fixture.
+            location: crates/opdev-ci/src/lib.rs
