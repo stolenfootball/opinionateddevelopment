@@ -1113,6 +1113,7 @@ dependencies = [
  "opdev-release",
  "opdev-remote",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

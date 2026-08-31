@@ -1,5 +1,6 @@
-use std::collections::HashSet;
-use std::fs;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -11,6 +12,8 @@ use thiserror::Error;
 /// Repository-relative path of the optional evidence ledger.
 pub const EVIDENCE_PATH: &str = ".opdev/evidence.yaml";
 const EVIDENCE_SCHEMA: &str = include_str!("../../../schema/evidence.schema.json");
+const EVIDENCE_BOOTSTRAP_SCHEMA: &str =
+    include_str!("../../../schema/evidence-bootstrap.schema.json");
 
 /// Failure while loading, validating, or binding project evidence.
 #[derive(Debug, Error)]
@@ -23,9 +26,20 @@ pub enum EvidenceError {
         /// Filesystem failure.
         source: std::io::Error,
     },
+    /// A new evidence file could not be created.
+    #[error("could not create evidence file `{path}`: {source}")]
+    Write {
+        /// Evidence file path.
+        path: PathBuf,
+        /// Filesystem failure.
+        source: std::io::Error,
+    },
     /// YAML parsing failed.
     #[error("evidence ledger YAML is invalid: {0}")]
     Yaml(#[from] serde_saphyr::Error),
+    /// YAML serialization failed.
+    #[error("evidence YAML could not be serialized: {0}")]
+    YamlSerialize(#[from] serde_saphyr::SerializeError),
     /// Bundled schema JSON is malformed.
     #[error("the bundled evidence schema is invalid: {0}")]
     SchemaDocument(#[from] serde_json::Error),
@@ -41,6 +55,224 @@ pub enum EvidenceError {
     /// Git could not produce an index fingerprint.
     #[error("could not fingerprint the staged Git index: {0}")]
     Git(String),
+}
+
+/// Explicit reviewer decision for a bootstrap candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewDecision {
+    /// No satisfying outcome has been asserted.
+    ReviewRequired,
+    /// The reviewer asserts that the rule passed.
+    Passed,
+    /// The reviewer asserts, with applicability evidence, that the rule does not apply.
+    NotApplicable,
+}
+
+/// Shared evidence and per-rule reviewer decisions for one evidence scope.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceReview {
+    /// Concrete evidence shared by the accepted decisions in this scope.
+    pub evidence: Vec<Evidence>,
+    /// One explicit decision for every generated rule candidate.
+    pub decisions: BTreeMap<String, ReviewDecision>,
+}
+
+/// Fingerprint-bound review of one exact staged repository state.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChangeEvidenceReview {
+    /// SHA-256 fingerprint of the staged Git index.
+    pub fingerprint: String,
+    /// Work item or other review authority for this change.
+    pub work: String,
+    /// Concrete evidence shared by the accepted change decisions.
+    pub evidence: Vec<Evidence>,
+    /// One explicit decision for every generated change-rule candidate.
+    pub decisions: BTreeMap<String, ReviewDecision>,
+}
+
+/// Compact, schema-validated review input for a new evidence ledger.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceBootstrap {
+    /// Bootstrap questionnaire schema version.
+    pub schema: u32,
+    /// Durable project-policy or capability review.
+    pub project: EvidenceReview,
+    /// Review bound to the exact staged change.
+    pub change: ChangeEvidenceReview,
+}
+
+impl EvidenceBootstrap {
+    /// Creates an unresolved questionnaire from the evaluator's current candidates.
+    #[must_use]
+    pub fn new(
+        fingerprint: String,
+        project_rules: impl IntoIterator<Item = String>,
+        change_rules: impl IntoIterator<Item = String>,
+    ) -> Self {
+        let unresolved = |rules: Vec<String>| {
+            rules
+                .into_iter()
+                .map(|rule| (rule, ReviewDecision::ReviewRequired))
+                .collect()
+        };
+        Self {
+            schema: 1,
+            project: EvidenceReview {
+                evidence: Vec::new(),
+                decisions: unresolved(project_rules.into_iter().collect()),
+            },
+            change: ChangeEvidenceReview {
+                fingerprint,
+                work: String::new(),
+                evidence: Vec::new(),
+                decisions: unresolved(change_rules.into_iter().collect()),
+            },
+        }
+    }
+
+    /// Loads and schema-validates a completed bootstrap review.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvidenceError`] when the file cannot be read or violates the
+    /// bootstrap schema.
+    pub fn load(path: &Path) -> Result<Self, EvidenceError> {
+        let yaml = fs::read_to_string(path).map_err(|source| EvidenceError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let value: serde_json::Value = serde_saphyr::from_str(&yaml)?;
+        validate_schema_document(&value, EVIDENCE_BOOTSTRAP_SCHEMA, "bootstrap")?;
+        Ok(serde_saphyr::from_str(&yaml)?)
+    }
+
+    /// Serializes the review input in its canonical YAML form.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvidenceError`] when serialization fails.
+    pub fn to_yaml(&self) -> Result<String, EvidenceError> {
+        Ok(serde_saphyr::to_string(self)?)
+    }
+
+    /// Serializes a questionnaire with catalog-derived comments for reviewers.
+    /// Comments are informative; rule IDs and decisions remain the only parsed
+    /// authority.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvidenceError`] when serialization fails.
+    pub fn to_review_yaml(&self, catalog: &RuleCatalog) -> Result<String, EvidenceError> {
+        let yaml = self.to_yaml()?;
+        let mut rendered = String::new();
+        for line in yaml.lines() {
+            if let Some((prefix, _)) = line.split_once(": review_required") {
+                let rule_id = prefix.trim();
+                if let Ok(rule_id) = rule_id.parse::<RuleId>()
+                    && let Some(rule) = catalog.find(&rule_id)
+                {
+                    let indentation = &line[..line.len() - line.trim_start().len()];
+                    let title = rule.title.replace(['\r', '\n'], " ");
+                    let applicability = rule.applicability.replace(['\r', '\n'], " ");
+                    rendered.push_str(indentation);
+                    rendered.push_str("# ");
+                    rendered.push_str(&title);
+                    rendered.push_str("; applicability: ");
+                    rendered.push_str(&applicability);
+                    rendered.push('\n');
+                }
+            }
+            rendered.push_str(line);
+            rendered.push('\n');
+        }
+        Ok(rendered)
+    }
+
+    /// Ensures reviewed answers still describe exactly the candidates that the
+    /// current evaluator and staged state produced.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvidenceError`] for stale, added, removed, or re-scoped rules.
+    pub fn validate_candidates(
+        &self,
+        project_rules: &[String],
+        change_rules: &[String],
+        fingerprint: &str,
+    ) -> Result<(), EvidenceError> {
+        if self.schema != 1 {
+            return Err(EvidenceError::Semantic(format!(
+                "unsupported bootstrap schema {}; expected 1",
+                self.schema
+            )));
+        }
+        if self.change.fingerprint != fingerprint {
+            return Err(EvidenceError::Semantic(
+                "the bootstrap review is stale: its change fingerprint does not match the current staged index"
+                    .into(),
+            ));
+        }
+        validate_candidate_set(
+            "project",
+            self.project.decisions.keys(),
+            project_rules.iter(),
+        )?;
+        validate_candidate_set("change", self.change.decisions.keys(), change_rules.iter())?;
+        Ok(())
+    }
+
+    /// Expands accepted decisions into the existing evidence-ledger contract.
+    /// Unresolved decisions are omitted and never become satisfying outcomes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvidenceError`] when an accepted decision lacks concrete
+    /// evidence, change authority, or catalog support.
+    pub fn to_ledger(&self, catalog: &RuleCatalog) -> Result<EvidenceLedger, EvidenceError> {
+        let project = reviewed_assertions(
+            "project",
+            &self.project.decisions,
+            &self.project.evidence,
+            catalog,
+        )?;
+        let change_assertions = reviewed_assertions(
+            "change",
+            &self.change.decisions,
+            &self.change.evidence,
+            catalog,
+        )?;
+        if project.is_empty() && change_assertions.is_empty() {
+            return Err(EvidenceError::Semantic(
+                "the bootstrap review has no accepted decisions; review_required is intentionally not evidence"
+                    .into(),
+            ));
+        }
+        if !change_assertions.is_empty() && self.change.work.trim().is_empty() {
+            return Err(EvidenceError::Semantic(
+                "accepted change decisions need a concrete work authority".into(),
+            ));
+        }
+        let changes = if change_assertions.is_empty() {
+            Vec::new()
+        } else {
+            vec![ChangeEvidence {
+                fingerprint: self.change.fingerprint.clone(),
+                work: self.change.work.trim().to_owned(),
+                assertions: change_assertions,
+            }]
+        };
+        let ledger = EvidenceLedger {
+            schema: 1,
+            project,
+            changes,
+        };
+        ledger.validate(catalog)?;
+        Ok(ledger)
+    }
 }
 
 /// One evidence-backed assertion for a stable core rule.
@@ -100,10 +332,43 @@ impl EvidenceLedger {
             Err(source) => return Err(EvidenceError::Read { path, source }),
         };
         let value: serde_json::Value = serde_saphyr::from_str(&yaml)?;
-        validate_schema(&value)?;
+        validate_schema_document(&value, EVIDENCE_SCHEMA, "ledger")?;
         let ledger: Self = serde_saphyr::from_str(&yaml)?;
         ledger.validate(catalog)?;
         Ok(Some(ledger))
+    }
+
+    /// Serializes the ledger in canonical YAML form.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvidenceError`] when serialization fails.
+    pub fn to_yaml(&self) -> Result<String, EvidenceError> {
+        Ok(serde_saphyr::to_string(self)?)
+    }
+
+    /// Creates `.opdev/evidence.yaml` without replacing an existing ledger.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvidenceError`] when validation or create-new writing fails.
+    pub fn write_new(&self, root: &Path, catalog: &RuleCatalog) -> Result<PathBuf, EvidenceError> {
+        self.validate(catalog)?;
+        let path = root.join(EVIDENCE_PATH);
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|source| EvidenceError::Write {
+                path: path.clone(),
+                source,
+            })?;
+        file.write_all(self.to_yaml()?.as_bytes())
+            .map_err(|source| EvidenceError::Write {
+                path: path.clone(),
+                source,
+            })?;
+        Ok(path)
     }
 
     fn validate(&self, catalog: &RuleCatalog) -> Result<(), EvidenceError> {
@@ -252,8 +517,89 @@ fn validate_assertions(
     Ok(())
 }
 
-fn validate_schema(value: &serde_json::Value) -> Result<(), EvidenceError> {
-    let schema: serde_json::Value = serde_json::from_str(EVIDENCE_SCHEMA)?;
+fn validate_candidate_set<'a>(
+    scope: &str,
+    actual: impl Iterator<Item = &'a String>,
+    expected: impl Iterator<Item = &'a String>,
+) -> Result<(), EvidenceError> {
+    let actual = actual.cloned().collect::<BTreeSet<_>>();
+    let expected = expected.cloned().collect::<BTreeSet<_>>();
+    if actual == expected {
+        return Ok(());
+    }
+    let added = actual.difference(&expected).cloned().collect::<Vec<_>>();
+    let missing = expected.difference(&actual).cloned().collect::<Vec<_>>();
+    Err(EvidenceError::Semantic(format!(
+        "the bootstrap {scope} candidates do not match the current evaluator (added: {}; missing: {})",
+        display_rules(&added),
+        display_rules(&missing)
+    )))
+}
+
+fn display_rules(rules: &[String]) -> String {
+    if rules.is_empty() {
+        "none".into()
+    } else {
+        rules.join(", ")
+    }
+}
+
+fn reviewed_assertions(
+    scope: &str,
+    decisions: &BTreeMap<String, ReviewDecision>,
+    evidence: &[Evidence],
+    catalog: &RuleCatalog,
+) -> Result<Vec<EvidenceAssertion>, EvidenceError> {
+    let accepted = decisions
+        .values()
+        .any(|decision| *decision != ReviewDecision::ReviewRequired);
+    if accepted && evidence.is_empty() {
+        return Err(EvidenceError::Semantic(format!(
+            "accepted {scope} decisions need concrete shared evidence"
+        )));
+    }
+    decisions
+        .iter()
+        .filter_map(|(rule_id, decision)| {
+            let outcome = match decision {
+                ReviewDecision::ReviewRequired => return None,
+                ReviewDecision::Passed => Outcome::Passed,
+                ReviewDecision::NotApplicable => Outcome::NotApplicable,
+            };
+            Some((rule_id, outcome))
+        })
+        .map(|(rule_id, outcome)| {
+            let parsed = rule_id.parse::<RuleId>().map_err(|error| {
+                EvidenceError::Semantic(format!("invalid bootstrap rule `{rule_id}`: {error}"))
+            })?;
+            let rule = catalog.find(&parsed).ok_or_else(|| {
+                EvidenceError::Semantic(format!(
+                    "bootstrap {scope} references unknown rule `{rule_id}`"
+                ))
+            })?;
+            let summary = match outcome {
+                Outcome::Passed => format!("Reviewed outcome: {}", rule.title),
+                Outcome::NotApplicable => {
+                    format!("Reviewed applicability: {}", rule.applicability)
+                }
+                _ => unreachable!("bootstrap decisions have satisfying outcomes only"),
+            };
+            Ok(EvidenceAssertion {
+                rule_id: parsed,
+                outcome,
+                summary,
+                evidence: evidence.to_vec(),
+            })
+        })
+        .collect()
+}
+
+fn validate_schema_document(
+    value: &serde_json::Value,
+    schema_document: &str,
+    document_name: &str,
+) -> Result<(), EvidenceError> {
+    let schema: serde_json::Value = serde_json::from_str(schema_document)?;
     let validator = jsonschema::validator_for(&schema)
         .map_err(|error| EvidenceError::SchemaCompile(error.to_string()))?;
     let messages = validator
@@ -263,7 +609,10 @@ fn validate_schema(value: &serde_json::Value) -> Result<(), EvidenceError> {
     if messages.is_empty() {
         Ok(())
     } else {
-        Err(EvidenceError::SchemaValidation(messages.join("\n")))
+        Err(EvidenceError::SchemaValidation(format!(
+            "{document_name}:\n{}",
+            messages.join("\n")
+        )))
     }
 }
 
@@ -288,7 +637,7 @@ project:
 changes: []
 ";
         let value: serde_json::Value = serde_saphyr::from_str(valid)?;
-        validate_schema(&value)?;
+        validate_schema_document(&value, EVIDENCE_SCHEMA, "ledger")?;
         let ledger: EvidenceLedger = serde_saphyr::from_str(valid)?;
         ledger.validate(&embedded_catalog()?)?;
 
@@ -325,6 +674,52 @@ changes: []
         assert_eq!(first, second);
         fs::write(root.join("untracked.txt"), "material")?;
         assert!(staged_fingerprint(root).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_is_unresolved_schema_valid_and_fail_closed()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fingerprint = "a".repeat(64);
+        let project_rules = vec!["OPDEV-SEC-001".to_owned()];
+        let change_rules = vec!["OPDEV-WORK-001".to_owned()];
+        let mut review = EvidenceBootstrap::new(
+            fingerprint.clone(),
+            project_rules.clone(),
+            change_rules.clone(),
+        );
+        let yaml = review.to_yaml()?;
+        let value: serde_json::Value = serde_saphyr::from_str(&yaml)?;
+        validate_schema_document(&value, EVIDENCE_BOOTSTRAP_SCHEMA, "bootstrap")?;
+        assert!(review.to_ledger(&embedded_catalog()?).is_err());
+
+        review
+            .project
+            .decisions
+            .insert("OPDEV-SEC-001".into(), ReviewDecision::Passed);
+        assert!(review.to_ledger(&embedded_catalog()?).is_err());
+        review.project.evidence.push(Evidence {
+            kind: "policy".into(),
+            summary: "The security policy was reviewed against the project boundary.".into(),
+            location: Some("SECURITY.md".into()),
+        });
+        review.validate_candidates(&project_rules, &change_rules, &fingerprint)?;
+        let ledger = review.to_ledger(&embedded_catalog()?)?;
+        assert_eq!(ledger.project.len(), 1);
+        assert!(ledger.changes.is_empty());
+
+        let mut stale_rules = change_rules;
+        stale_rules.push("OPDEV-DESIGN-001".into());
+        assert!(
+            review
+                .validate_candidates(&project_rules, &stale_rules, &fingerprint)
+                .is_err()
+        );
+        assert!(
+            review
+                .validate_candidates(&project_rules, &[], &"b".repeat(64))
+                .is_err()
+        );
         Ok(())
     }
 }

@@ -22,5 +22,8 @@ opdev-release = { path = "../opdev-release" }
 opdev-remote = { path = "../opdev-remote" }
 serde_json.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

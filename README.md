@@ -157,22 +157,33 @@ git add -- path/to/changed-file
 ```
 
 If OpDev reports a required fact that automation cannot verify, review the fact,
-fingerprint the complete staged index, and add only justified assertions to the
-evidence ledger:
+then generate a compact questionnaire outside the Git working tree. It separates
+durable project facts from assertions bound to this exact staged change:
 
 ```sh
-opdev evidence fingerprint
-# Add a matching change entry to .opdev/evidence.yaml.
+opdev evidence bootstrap > ../opdev-evidence-review.yaml
+# Edit the questionnaire: decisions begin as review_required.
+opdev evidence bootstrap --answers ../opdev-evidence-review.yaml
+# After reviewing the expanded candidate ledger:
+opdev evidence bootstrap --answers ../opdev-evidence-review.yaml --write
 git add .opdev/evidence.yaml
 opdev check --ci
 git commit -m "feat: describe the change"
 git push
 ```
 
-Skip the evidence step when no reviewed assertion is needed. Changing any staged
-path, content, or executable bit invalidates an existing fingerprint. The pull
-or merge request then runs the project's normal build and test commands plus the
-OpDev integration gate.
+Each generated decision is `review_required`, which cannot satisfy a gate. A
+reviewer must add concrete evidence and explicitly choose `passed` or justified
+`not_applicable`; OpDev never chooses either. It rejects stale fingerprints or
+changed candidate sets, previews before writing, and refuses to replace an
+existing ledger. Use `opdev evidence fingerprint` when maintaining an existing
+ledger directly.
+
+Skip the evidence step when no reviewed assertion is needed. Keep the temporary
+questionnaire outside the repository: untracked material intentionally blocks
+fingerprinting. Changing any staged path, content, or executable bit invalidates
+an existing fingerprint. The pull or merge request then runs the project's
+normal build and test commands plus the OpDev integration gate.
 
 ### 5. Connect CI
 
@@ -244,7 +255,7 @@ The normative sources are [`rules/core.yaml`](rules/core.yaml) and
 | Path | Purpose |
 | --- | --- |
 | `.opdev/project.yaml` | Small, schema-validated project contract that selects authorities, commands, delivery behavior, and assurance profiles. |
-| `.opdev/evidence.yaml` | Optional reviewed project and staged-change assertions; it is evidence ingress, not a waiver file. |
+| `.opdev/evidence.yaml` | Optional reviewed project and staged-change assertions; it is evidence ingress, not a waiver file. `opdev evidence bootstrap` can create a first ledger from explicit reviewed answers. |
 | `AGENTS.md` | Detailed managed guidance that gives fresh agents reliable process continuity. Existing project-owned content is preserved. |
 | `CLAUDE.md` | Imports the shared `AGENTS.md` guidance for Claude Code while preserving one behavioral source. |
 
@@ -275,7 +286,7 @@ allowlist of software OpDev can govern.
 | `opdev check` | Execute configured checks and evaluate project requirements. |
 | `opdev doctor` | Explain missing, contradictory, or unverified capabilities. |
 | `opdev ci` | Generate or inspect GitHub Actions and GitLab CI configurations. |
-| `opdev evidence` | Fingerprint staged repository state for reviewed change evidence. |
+| `opdev evidence` | Bootstrap a new reviewed evidence ledger or fingerprint staged state for direct ledger maintenance. |
 | `opdev rules` | Inspect the embedded normative rule catalog. |
 | `opdev profiles` | Inspect bundled exact-version assurance profiles. |
 | `opdev release` | Deterministically package already-built artifacts and bind them to checksums, an SBOM, source, and provenance. |
