@@ -27,7 +27,18 @@ jobs:
           (cd "$install_dir" && grep "  $archive$" SHA256SUMS | sha256sum -c - && tar -xzf "$archive")
           install -m 0755 "$install_dir/opdev" "$RUNNER_TEMP/opdev"
       - name: Evaluate integration gate
-        run: "$RUNNER_TEMP/opdev check --ci --format json > opdev-report.json"
+        run: |
+          set +e
+          export PATH="$RUNNER_TEMP:$PATH"
+          opdev check --ci --format json > "$RUNNER_TEMP/opdev-report.json"
+          opdev_status=$?
+          cp "$RUNNER_TEMP/opdev-report.json" opdev-report.json
+          copy_status=$?
+          if [ "$copy_status" -ne 0 ]; then
+            echo "Could not preserve the OpDev report" >&2
+            exit "$copy_status"
+          fi
+          exit "$opdev_status"
       - name: Preserve OpDev evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

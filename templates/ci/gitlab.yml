@@ -19,7 +19,19 @@ opdev:
     - export PATH="$install_dir:$PATH"
     - opdev version
   script:
-    - opdev check --ci --format json > opdev-report.json
+    - |
+      set -e
+      report_file="$(mktemp)"
+      set +e
+      opdev check --ci --format json > "$report_file"
+      opdev_status=$?
+      cp "$report_file" opdev-report.json
+      copy_status=$?
+      if [ "$copy_status" -ne 0 ]; then
+        echo "Could not preserve the OpDev report" >&2
+        exit "$copy_status"
+      fi
+      exit "$opdev_status"
   artifacts:
     when: always
     paths:

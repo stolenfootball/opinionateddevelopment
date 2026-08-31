@@ -682,3 +682,84 @@ changes:
           - kind: test
             summary: The replacement major-minor tag resolves and runs the complete installer and Go fixture.
             location: crates/opdev-ci/src/lib.rs
+  - fingerprint: 7ec90ad89d683f929df3a19e133e323ec48e78b69f97ad5222a4809786d798dc
+    work: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/18
+    assertions:
+      - rule_id: OPDEV-WORK-001
+        outcome: passed
+        summary: Issue 18 preserves the failed private Node canary, the pre-execution redirection root cause, and executable acceptance criteria for both CI providers.
+        evidence:
+          - kind: work
+            summary: The issue records the failed run, researched provider constraints, and required artifact and exit-status behavior.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/issues/18
+      - rule_id: OPDEV-DESIGN-001
+        outcome: passed
+        summary: The provider contract keeps live evaluator output outside the checkout until fingerprint-sensitive evaluation has finished, then copies it back for artifact collection.
+        evidence:
+          - kind: specification
+            summary: Temporary output, post-evaluation copying, evaluator status preservation, and copy-failure behavior are normative.
+            location: spec/ci-providers.md
+          - kind: research
+            summary: GNU Bash documents that shell redirections occur before command execution.
+            location: https://www.gnu.org/software/bash/manual/html_node/Redirections.html
+          - kind: research
+            summary: GitHub documents RUNNER_TEMP as per-job temporary storage emptied around each job.
+            location: https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+          - kind: research
+            summary: GitLab documents that artifact paths must be relative to the project checkout.
+            location: https://docs.gitlab.com/ci/jobs/job_artifacts/
+      - rule_id: MCD-TRUNK-002
+        outcome: passed
+        summary: The repair uses a short-lived issue branch created from green main after the preceding Go image correction was integrated.
+        evidence:
+          - kind: git
+            summary: codex/issue-18-ci-report-fingerprint is a direct descendant of main pipeline 31.
+            location: codex/issue-18-ci-report-fingerprint
+      - rule_id: MCD-TRUNK-003
+        outcome: passed
+        summary: Reproduction, research, implementation, Linux execution, and integration are contained in one canary feedback cycle.
+        evidence:
+          - kind: git
+            summary: The branch contains one bounded provider-output correction for immediate integration.
+            location: codex/issue-18-ci-report-fingerprint
+      - rule_id: MCD-FLOW-001
+        outcome: not_applicable
+        summary: OpDev main was green when the issue 18 branch was based; the observed failure belongs to the disposable GitHub canary branch.
+        evidence:
+          - kind: remote
+            summary: Main pipeline 31 passed after issue 17 integration and before final issue 18 evidence binding.
+            location: https://gitlab.com/stolenfootball-tools/opinionateddevelopment/-/pipelines/2804317566
+      - rule_id: MCD-COMPAT-001
+        outcome: passed
+        summary: Both providers retain the same report artifact path and gate result while moving only the live output stream to job-temporary storage.
+        evidence:
+          - kind: test
+            summary: Generated YAML continues to parse and satisfy the existing provider inspection contract.
+            location: crates/opdev-ci/src/lib.rs
+      - rule_id: OPDEV-TEST-002
+        outcome: passed
+        summary: Acceptance maps to an executable cross-provider regression plus the existing structural, inspection, and workspace suites.
+        evidence:
+          - kind: test
+            summary: A fake blocked evaluator proves the report is absent during execution, copied afterward, and returns its original status for GitHub and GitLab scripts.
+            location: crates/opdev-ci/src/lib.rs
+          - kind: test
+            summary: The Unix-only generated-shell regression passed in the declared Rust Linux container.
+            location: crates/opdev-ci/src/lib.rs
+      - rule_id: OPDEV-AI-001
+        outcome: passed
+        summary: The agent-authored repair is accepted only after primary-source research, executable regression coverage, canonical gates, plugin validation, evidence binding, and CI review.
+        evidence:
+          - kind: policy
+            summary: The initialized repository protocol requires the same canonical evidence for agent-authored work.
+            location: AGENTS.md
+      - rule_id: OPDEV-LEARN-001
+        outcome: passed
+        summary: A private canary failure was generalized into a provider-independent output invariant rather than bypassing fingerprint enforcement.
+        evidence:
+          - kind: canary
+            summary: GitHub run 33356643470 passed installation and the inferred npm test but rejected all change evidence after the shell pre-created the report.
+            location: https://github.com/stolenfootball/opdev-canary-github-20260831-001418/actions/runs/33356643470
+          - kind: test
+            summary: Both generated provider scripts now enforce the same temporary-output and status-preservation behavior.
+            location: crates/opdev-ci/src/lib.rs

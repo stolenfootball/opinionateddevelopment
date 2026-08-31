@@ -498,6 +498,65 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn generated_evaluators_keep_reports_outside_the_worktree_until_opdev_exits()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for provider in [CiProvider::Github, CiProvider::Gitlab] {
+            let project = tempfile::tempdir()?;
+            let runner_temp = tempfile::tempdir()?;
+            let fake_opdev = runner_temp.path().join("opdev");
+            fs::write(
+                &fake_opdev,
+                "#!/bin/sh\nif [ -e \"$PROJECT_DIR/opdev-report.json\" ]; then\n  printf '{\"error\":\"report contaminated fingerprint\"}\\n'\n  exit 91\nfi\nprintf '{\"gate\":\"blocked\"}\\n'\nexit 37\n",
+            )?;
+            let mut permissions = fs::metadata(&fake_opdev)?.permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&fake_opdev, permissions)?;
+
+            let rendered = rendered(provider)?;
+            let parsed: serde_json::Value = serde_saphyr::from_str(&rendered)?;
+            let script = match provider {
+                CiProvider::Github => parsed["jobs"]["opdev"]["steps"][2]["run"]
+                    .as_str()
+                    .ok_or_else(|| {
+                        std::io::Error::other("GitHub evaluation step is not a string")
+                    })?,
+                CiProvider::Gitlab => parsed["opdev"]["script"][0].as_str().ok_or_else(|| {
+                    std::io::Error::other("GitLab evaluation step is not a string")
+                })?,
+                CiProvider::Other | CiProvider::Unconfigured => {
+                    return Err(std::io::Error::other("unsupported fixture provider").into());
+                }
+            };
+            let path = format!(
+                "{}:{}",
+                runner_temp.path().display(),
+                std::env::var("PATH").unwrap_or_default()
+            );
+            let output = Command::new("bash")
+                .arg("-c")
+                .arg(script)
+                .env("PROJECT_DIR", project.path())
+                .env("RUNNER_TEMP", runner_temp.path())
+                .env("PATH", path)
+                .current_dir(project.path())
+                .output()?;
+            assert_eq!(
+                output.status.code(),
+                Some(37),
+                "{provider:?} did not preserve the evaluator status: stdout={} stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                fs::read_to_string(project.path().join("opdev-report.json"))?,
+                "{\"gate\":\"blocked\"}\n"
+            );
+        }
+        Ok(())
+    }
+
     #[test]
     fn gitlab_images_are_inferred_from_project_version_metadata()
     -> Result<(), Box<dyn std::error::Error>> {
